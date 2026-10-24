@@ -5,6 +5,7 @@ import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { Plus, Pencil, Trash2, Search, X, UploadCloud } from 'lucide-react';
 import { formatINR } from '@/lib/utils';
+import { resizeImage } from '@/lib/image';
 
 export default function AdminProductsPage() {
   const [products, setProducts] = useState([]);
@@ -40,13 +41,14 @@ export default function AdminProductsPage() {
   const filtered = useMemo(() => {
     let list = [...products];
 
-    // Search by product name or SKU
+    // Search by product name, SKU or material
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter(
         (p) =>
           p.name?.toLowerCase().includes(q) ||
-          p.sku?.toLowerCase().includes(q)
+          p.sku?.toLowerCase().includes(q) ||
+          p.material?.toLowerCase().includes(q)
       );
     }
 
@@ -93,8 +95,8 @@ export default function AdminProductsPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or SKU..."
-            className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none"
+            placeholder="Search by name, SKU or material..."
+            className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none bg-white"
           />
           {search && (
             <button
@@ -109,7 +111,7 @@ export default function AdminProductsPage() {
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none"
+          className="px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none bg-white"
         >
           <option value="all">All Categories</option>
           {categories.map((c) => (
@@ -120,7 +122,7 @@ export default function AdminProductsPage() {
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
-          className="px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none"
+          className="px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none bg-white"
         >
           <option value="newest">Sort: Newest</option>
           <option value="category">Sort: Category (A–Z)</option>
@@ -140,6 +142,7 @@ export default function AdminProductsPage() {
                 <th className="p-3">Product</th>
                 <th className="p-3">SKU</th>
                 <th className="p-3">Category</th>
+                <th className="p-3">Material</th>
                 <th className="p-3">Price</th>
                 <th className="p-3">Variants</th>
                 <th className="p-3">Status</th>
@@ -147,32 +150,52 @@ export default function AdminProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((p) => (
-                <tr key={p._id} className="border-b border-brand-ink/5">
-                  <td className="p-3 font-medium">{p.name}</td>
-                  <td className="p-3 text-brand-ink/60">
-                    {p.sku || <span className="text-brand-ink/30">—</span>}
-                  </td>
-                  <td className="p-3 text-brand-ink/60">{p.category?.name}</td>
-                  <td className="p-3">{formatINR(p.basePrice)}</td>
-                  <td className="p-3">{p.variants?.length}</td>
-                  <td className="p-3">
-                    <span className={`px-2 py-1 rounded-full text-xs ${p.isActive ? 'bg-brand-green/15 text-brand-deepgreen' : 'bg-brand-ink/10 text-brand-ink/50'}`}>
-                      {p.isActive ? 'Active' : 'Hidden'}
-                    </span>
-                  </td>
-                  <td className="p-3 flex gap-2 justify-end">
-                    <Link href={`/admin/products/${p._id}/edit`} className="p-1.5 text-brand-magenta"><Pencil size={16} /></Link>
-                    <button onClick={() => remove(p._id)} className="p-1.5 text-brand-magenta"><Trash2 size={16} /></button>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((p) => {
+                const thumb = p.variants?.[0]?.images?.[0];
+                return (
+                  <tr key={p._id} className="border-b border-brand-ink/5">
+                    <td className="p-3 font-medium">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-md overflow-hidden bg-brand-cream shrink-0">
+                          {thumb && (
+                            <img
+                              src={resizeImage(thumb, 80, 80)}
+                              alt=""
+                              loading="lazy"
+                              className="w-full h-full object-cover"
+                            />
+                          )}
+                        </div>
+                        <span>{p.name}</span>
+                      </div>
+                    </td>
+                    <td className="p-3 text-brand-ink/60">
+                      {p.sku || <span className="text-brand-ink/30">—</span>}
+                    </td>
+                    <td className="p-3 text-brand-ink/60">{p.category?.name}</td>
+                    <td className="p-3 text-brand-ink/60">
+                      {p.material || <span className="text-brand-ink/30">—</span>}
+                    </td>
+                    <td className="p-3">{formatINR(p.basePrice)}</td>
+                    <td className="p-3">{p.variants?.length}</td>
+                    <td className="p-3">
+                      <span className={`px-2 py-1 rounded-full text-xs ${p.isActive ? 'bg-brand-green/15 text-brand-deepgreen' : 'bg-brand-ink/10 text-brand-ink/50'}`}>
+                        {p.isActive ? 'Active' : 'Hidden'}
+                      </span>
+                    </td>
+                    <td className="p-3 flex gap-2 justify-end">
+                      <Link href={`/admin/products/${p._id}/edit`} className="p-1.5 text-brand-magenta"><Pencil size={16} /></Link>
+                      <button onClick={() => remove(p._id)} className="p-1.5 text-brand-magenta"><Trash2 size={16} /></button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {filtered.length === 0 && (
             <p className="text-center text-brand-ink/40 py-10">
               {products.length === 0
-                ? 'No products yet. Add your first product!'
+                ? 'No products yet. Add your first piece!'
                 : 'No products match your filters.'}
             </p>
           )}

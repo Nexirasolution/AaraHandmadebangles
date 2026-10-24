@@ -1,18 +1,5 @@
 import mongoose from 'mongoose';
 
-// Snapshot of a chosen add-on at the time of order, so historical orders
-// stay accurate even if the product's options change/get deleted later.
-const AddonSelectionSchema = new mongoose.Schema(
-  {
-    optionId: { type: mongoose.Schema.Types.ObjectId, default: null },
-    name: { type: String, default: '' },
-    image: { type: String, default: '' },
-    price: { type: Number, default: 0 },
-    sku: { type: String, default: '' }
-  },
-  { _id: false }
-);
-
 const OrderItemSchema = new mongoose.Schema(
   {
     product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
@@ -21,13 +8,8 @@ const OrderItemSchema = new mongoose.Schema(
     sku: { type: String, default: '' },
     image: String,
     color: String,
-    size: String,
-    sleeveType: { type: String, default: '' },
-    zipType: { type: String, default: '' },
-    // null when the customer picked "None" (no pant / no shawl)
-    pantOption: { type: AddonSelectionSchema, default: null },
-    shawlOption: { type: AddonSelectionSchema, default: null },
-    price: Number, // unit price INCLUDING pant/shawl add-on prices
+    size: String, // bangle size ("2.4") or "Free Size"
+    price: Number, // unit price
     qty: Number
   },
   { _id: false }

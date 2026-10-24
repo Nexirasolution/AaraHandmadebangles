@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, Pencil, X, Upload, Loader2, ArrowUp, ArrowDown, CornerDownRight } from 'lucide-react';
+import { BANGLE_SIZES } from '@/lib/jewellery';
 
 const emptyForm = { name: '', slug: '', image: '', description: '', sizes: '', sortOrder: 0, sizeChart: [], parent: '' };
 
@@ -48,7 +49,8 @@ function CategoryRow({ category, indent, onMoveUp, onMoveDown, disableUp, disabl
         <p className="font-medium">{category.name}</p>
         <p className="text-xs text-brand-ink/50">
           /{category.slug} · order: {category.sortOrder ?? 0}
-          {category.sizeChart?.length ? ` · ${category.sizeChart.length} size chart image${category.sizeChart.length > 1 ? 's' : ''}` : ''}
+          {category.sizes?.length ? ` · sizes: ${category.sizes.join(', ')}` : ''}
+          {category.sizeChart?.length ? ` · ${category.sizeChart.length} size guide image${category.sizeChart.length > 1 ? 's' : ''}` : ''}
         </p>
       </div>
       {onAddSub && (
@@ -145,7 +147,7 @@ export default function AdminCategoriesPage() {
     }
   }
 
-  // Size chart — supports multiple images. Selecting several files at once
+  // Size guide — supports multiple images. Selecting several files at once
   // uploads each in turn and appends every resulting URL to the array.
   async function handleSizeChartFilesChange(e) {
     const files = Array.from(e.target.files || []);
@@ -163,7 +165,7 @@ export default function AdminCategoriesPage() {
         uploaded.push(data.url);
       }
       setForm((f) => ({ ...f, sizeChart: [...(f.sizeChart || []), ...uploaded] }));
-      toast.success(`${uploaded.length} size chart image${uploaded.length > 1 ? 's' : ''} uploaded`);
+      toast.success(`${uploaded.length} size guide image${uploaded.length > 1 ? 's' : ''} uploaded`);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -283,12 +285,13 @@ export default function AdminCategoriesPage() {
           </div>
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
 
-          <input required placeholder="Category name (e.g. Umbrella Kurtis)" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <input required placeholder="Category name (e.g. Silk Thread Bangles)" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <input placeholder="Slug (auto if blank)" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} />
 
           {/* Parent category — leave blank for a main/top-level category.
               Only top-level categories are selectable as a parent, so the
-              hierarchy stays two levels deep (category -> subcategory). */}
+              hierarchy stays two levels deep (category -> subcategory),
+              e.g. Bangles -> Silk Thread Bangles. */}
           <div>
             <label className="block text-xs text-brand-ink/50 mb-1">
               Parent category (leave blank for a main, top-level category)
@@ -305,14 +308,29 @@ export default function AdminCategoriesPage() {
             </select>
           </div>
 
-          <input placeholder="Available sizes, comma separated (S, M, L, XL)" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.sizes} onChange={(e) => setForm({ ...form, sizes: e.target.value })} />
+          <div>
+            <input
+              placeholder="Available sizes, comma separated (2.2, 2.4, 2.6, 2.8) — or Free Size"
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              value={form.sizes}
+              onChange={(e) => setForm({ ...form, sizes: e.target.value })}
+            />
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, sizes: BANGLE_SIZES.join(', ') })}
+              className="text-xs text-brand-magenta underline mt-1"
+            >
+              Use standard bangle sizes ({BANGLE_SIZES.join(', ')})
+            </button>
+          </div>
+
           <textarea placeholder="Description" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
 
-          {/* Size chart — one or more images, used as the fallback on any
-              product in this category that has no size chart of its own */}
+          {/* Size guide — one or more images, used as the fallback on any
+              product in this category that has no size guide of its own */}
           <div>
             <label className="block text-xs text-brand-ink/50 mb-1">
-              Size chart images (optional — shown as a swipeable gallery on the storefront)
+              Size guide images (optional — e.g. how to measure your bangle size; shown as a swipeable gallery on the storefront)
             </label>
             <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
               {(form.sizeChart || []).map((url, idx) => (

@@ -4,34 +4,33 @@ import Product from '@/models/Product';
 import Category from '@/models/Category';
 import slugify from 'slugify';
 import { requireAdmin } from '@/lib/apiAuth';
+import { OCCASIONS } from '@/lib/jewellery';
 
 // POST /api/products/bulk
 // body: {
-//   category, skuPrefix, description, fabric,
-//   weight (grams per piece, required),
-//   price, compareAtPrice, sizes: [{ size, stock }],
+//   category, skuPrefix, description,
+//   material, finish, stoneType,          (optional text, e.g. "Silk Thread", "Gold Plated", "Kundan")
+//   piecesInSet,                          (optional, default 1 — e.g. 4 for a set of 4 bangles)
+//   occasion: [ 'Daily Wear' | 'Festive' | 'Wedding' | 'Party' | 'Office' | 'Gifting', ... ],
+//   careInstructions,
+//   weight (grams per purchase unit, required),
+//   price, compareAtPrice, sizes: [{ size, stock }],   (size = "2.4" etc. or "Free Size")
 //   images: [url, url, ...], tags,
-//   isReadyToShip, sizeChart: [url, url, ...],
-//   sleeveOptions: [ 'Full Sleeve' | 'Half Sleeve' | 'Elbow Sleeve' | 'Sleeveless', ... ],
-//   zipOptions: [ 'With Zip' | 'Without Zip', ... ]
+//   isReadyToShip, sizeChart: [url, url, ...]
 // }
 // Creates ONE product per image.
 // - Title = auto-derived from the CATEGORY name + zero-padded number,
-//   e.g. category "Silk Sarees" -> SILKSAREES001, SILKSAREES002...
+//   e.g. category "Silk Thread Bangles" -> SILKTHREADBANGLES001, ...002...
 //   (continues from the highest existing number for that title-code in
 //   that category, so repeated bulk uploads don't collide)
 // - SKU = admin-typed short code + zero-padded number, e.g. "MT" -> MT001, MT002...
 //   (continues from the highest existing SKU with that code, globally,
 //   since SKU is a global-unique field)
-// - weight / isReadyToShip / sizeChart / sleeveOptions / zipOptions, if provided, are
-//   applied identically to every product created in this batch.
-//   weight is the per-piece shipping weight in grams and is required.
-//   sizeChart is optional — if omitted, the storefront falls back to the
-//   category's own size chart images. sleeveOptions/zipOptions are optional
-//   product-level attributes — if omitted, no sleeve/zip selector shows on
-//   the storefront for these products.
-//   Pant/Shawl add-on options aren't set here (they're per-product) — set
-//   them afterward on each product's own edit page.
+// - Every other field, if provided, is applied identically to every product
+//   created in this batch. weight is the shipping weight of one purchase
+//   unit (one pair / set / piece) in grams and is required.
+//   sizeChart (size-guide images) is optional — if omitted, the storefront
+//   falls back to the category's own size chart images.
 export const POST = requireAdmin(async (req) => {
   try {
     await dbConnect();
@@ -41,7 +40,12 @@ export const POST = requireAdmin(async (req) => {
       category,
       skuPrefix,
       description = '',
-      fabric = '',
+      material = '',
+      finish = '',
+      stoneType = '',
+      piecesInSet = 1,
+      occasion = [],
+      careInstructions = '',
       weight = 0,
       price,
       compareAtPrice = 0,
@@ -50,8 +54,6 @@ export const POST = requireAdmin(async (req) => {
       tags = [],
       isReadyToShip = false,
       sizeChart = [],
-      sleeveOptions = [],
-      zipOptions = [],
     } = body;
 
     if (!category) {
@@ -71,7 +73,7 @@ export const POST = requireAdmin(async (req) => {
     }
     const sizeEntries = (sizes || [])
       .filter((s) => s.size)
-      .map((s) => ({ size: s.size, stock: Number(s.stock) || 0 }));
+      .map((s) => ({ size: String(s.size).trim(), stock: Number(s.stock) || 0 }));
     if (sizeEntries.length === 0) {
       return NextResponse.json({ error: 'At least one size with stock is required' }, { status: 400 });
     }
@@ -82,18 +84,13 @@ export const POST = requireAdmin(async (req) => {
       ? sizeChart.filter(Boolean)
       : (sizeChart ? [sizeChart] : []);
 
-    // Validate sleeve/zip options against the schema's allowed enum values,
-    // so a bad value from a stale client can't silently fail product
-    // creation for the whole batch (Mongoose enum validation would reject
-    // the entire document otherwise).
-    const ALLOWED_SLEEVE = ['Full Sleeve', 'Half Sleeve', 'Elbow Sleeve', 'Sleeveless'];
-    const ALLOWED_ZIP = ['With Zip', 'Without Zip'];
-    const sleeveOptionsClean = Array.isArray(sleeveOptions)
-      ? sleeveOptions.filter((s) => ALLOWED_SLEEVE.includes(s))
+    // Only keep occasions the storefront knows about, so a stale client
+    // can't store junk values.
+    const occasionClean = Array.isArray(occasion)
+      ? occasion.filter((o) => OCCASIONS.includes(o))
       : [];
-    const zipOptionsClean = Array.isArray(zipOptions)
-      ? zipOptions.filter((z) => ALLOWED_ZIP.includes(z))
-      : [];
+
+    const piecesInSetClean = Math.max(1, Math.floor(Number(piecesInSet)) || 1);
 
     const cat = await Category.findById(category);
     if (!cat) return NextResponse.json({ error: 'Category not found' }, { status: 404 });
@@ -146,7 +143,7 @@ export const POST = requireAdmin(async (req) => {
 
     for (let i = 0; i < images.length; i++) {
       const titleNum = maxTitleNum + i + 1;
-      const name = `${titleCode}${String(titleNum).padStart(3, '0')}`; // e.g. SILKSAREES001
+      const name = `${titleCode}${String(titleNum).padStart(3, '0')}`; // e.g. SILKTHREADBANGLES001
       const slug = slugify(name, { lower: true });
 
       const skuNum = maxSkuNum + i + 1;
@@ -180,15 +177,18 @@ export const POST = requireAdmin(async (req) => {
           sku,
           description,
           category: cat._id,
-          fabric,
+          material: String(material || '').trim(),
+          finish: String(finish || '').trim(),
+          stoneType: String(stoneType || '').trim(),
+          piecesInSet: piecesInSetClean,
+          occasion: occasionClean,
+          careInstructions: String(careInstructions || '').trim(),
           weight: Number(weight),
           tags,
           variants: [variant],
           basePrice: Number(price),
           isReadyToShip: !!isReadyToShip,
           sizeChart: sizeChartImages,
-          sleeveOptions: sleeveOptionsClean,
-          zipOptions: zipOptionsClean,
         });
 
         created.push({ id: product._id, name: product.name, sku: product.sku });

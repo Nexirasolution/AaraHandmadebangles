@@ -8,7 +8,9 @@ import slugify from 'slugify';
 import { requireAdmin } from '@/lib/apiAuth';
 import { generateSku } from '@/lib/sku';
 
-// GET /api/products?category=slug&size=M&minPrice=0&maxPrice=2000&sort=newest&page=1&limit=20&flag=bestseller
+// GET /api/products?category=slug&size=2.4&minPrice=0&maxPrice=2000&sort=newest&page=1&limit=20&flag=bestseller
+//   Jewellery filters (all optional, exact match):
+//   &material=Silk%20Thread  &finish=Gold%20Plated  &stoneType=Kundan  &occasion=Wedding
 // Pass limit=all to skip pagination entirely and return every matching product.
 export async function GET(req) {
   try {
@@ -33,8 +35,22 @@ export async function GET(req) {
       }
     }
 
+    // Bangle size (2.2, 2.4, ...) or "Free Size"
     const size = searchParams.get('size');
     if (size) query['variants.sizes.size'] = size;
+
+    // Jewellery attribute filters
+    const material = searchParams.get('material');
+    if (material) query.material = material;
+
+    const finish = searchParams.get('finish');
+    if (finish) query.finish = finish;
+
+    const stoneType = searchParams.get('stoneType');
+    if (stoneType) query.stoneType = stoneType;
+
+    const occasion = searchParams.get('occasion');
+    if (occasion) query.occasion = occasion; // matches if the array contains it
 
     const minPrice = searchParams.get('minPrice');
     const maxPrice = searchParams.get('maxPrice');
@@ -91,9 +107,9 @@ export async function GET(req) {
     const page = Number(searchParams.get('page') || 1);
     const limit = Number(limitParam || 24);
 
-    // Added `sizeChart` so any storefront view built off this list (e.g. a
-    // quick-view modal) can resolve the same product -> category size-chart
-    // fallback used on the full product detail page.
+    // `sizeChart` is included so any storefront view built off this list
+    // (e.g. a quick-view modal) can resolve the same product -> category
+    // size-guide fallback used on the full product detail page.
     let productsQuery = Product.find(query)
       .populate('category', 'name slug type sizeChart')
       .sort(sortMap[sort] || sortMap.newest);
@@ -137,9 +153,9 @@ export const POST = requireAdmin(async (req) => {
       ? Math.min(...body.variants.map((v) => v.price))
       : body.basePrice || 0;
 
-    // body already carries sizeChart / isReadyToShip / sleeveOptions /
-    // zipOptions / pantOptions / shawlOptions when the admin form sends
-    // them — no extra handling needed here, they're embedded subdocuments.
+    // body already carries material / finish / stoneType / piecesInSet /
+    // occasion / careInstructions / sizeChart / isReadyToShip when the admin
+    // form sends them — no extra handling needed here.
     const product = await Product.create({ ...body, slug, sku, basePrice });
     return NextResponse.json({ product }, { status: 201 });
   } catch (err) {

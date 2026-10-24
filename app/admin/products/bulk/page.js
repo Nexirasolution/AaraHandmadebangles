@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { X, UploadCloud, Loader2, Plus, Upload } from 'lucide-react';
+import { MATERIALS, FINISHES, STONE_TYPES, OCCASIONS, BANGLE_SIZES } from '@/lib/jewellery';
+
+const FIELD = 'w-full px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none bg-white';
 
 export default function BulkAddProductsPage() {
   const router = useRouter();
@@ -13,23 +16,23 @@ export default function BulkAddProductsPage() {
 
   const [skuPrefix, setSkuPrefix] = useState(''); // short code used to build SKUs, e.g. "MT" -> MT001
   const [description, setDescription] = useState('');
-  const [fabric, setFabric] = useState('');
-  const [weight, setWeight] = useState(''); // grams per piece, used for shipping
+  const [weight, setWeight] = useState(''); // grams per purchase unit (pair / set / piece), used for shipping
   const [price, setPrice] = useState('');
   const [compareAtPrice, setCompareAtPrice] = useState('');
-  const [stockBySize, setStockBySize] = useState({}); // { S: 10, M: 10, ... }
+  const [stockBySize, setStockBySize] = useState({}); // { '2.4': 10, '2.6': 10, ... }
+
+  // Jewellery attributes — applied to every product created in this batch.
+  const [material, setMaterial] = useState('');
+  const [finish, setFinish] = useState('');
+  const [stoneType, setStoneType] = useState('');
+  const [piecesInSet, setPiecesInSet] = useState('1');
+  const [occasion, setOccasion] = useState([]);
+  const [careInstructions, setCareInstructions] = useState('');
 
   // Applies to every product created in this batch
   const [isReadyToShip, setIsReadyToShip] = useState(false);
 
-  // Optional garment attributes — product-level, multi-select. Applied to
-  // every product in this batch. Leave both unchecked for categories where
-  // these don't apply (sarees, dupattas, etc). Customers will pick one of
-  // each on the storefront PDP if any are checked here.
-  const [sleeveOptions, setSleeveOptions] = useState([]);
-  const [zipOptions, setZipOptions] = useState([]);
-
-  // Optional — one or more shared size chart images applied to every
+  // Optional — one or more shared size-guide images applied to every
   // product in this batch. Leave empty to fall back to the category's
   // size chart instead.
   const [sizeChart, setSizeChart] = useState([]);
@@ -69,12 +72,8 @@ export default function BulkAddProductsPage() {
     setManualSizeStock('');
   }, [category, categories]);
 
-  function toggleSleeveOption(opt) {
-    setSleeveOptions((prev) => (prev.includes(opt) ? prev.filter((o) => o !== opt) : [...prev, opt]));
-  }
-
-  function toggleZipOption(opt) {
-    setZipOptions((prev) => (prev.includes(opt) ? prev.filter((o) => o !== opt) : [...prev, opt]));
+  function toggleOccasion(opt) {
+    setOccasion((prev) => (prev.includes(opt) ? prev.filter((o) => o !== opt) : [...prev, opt]));
   }
 
   function handleFilesChange(e) {
@@ -91,11 +90,22 @@ export default function BulkAddProductsPage() {
 
   function addManualSize() {
     const name = manualSizeName.trim().toUpperCase();
-    if (!name) return toast.error('Enter a size name (e.g. S, M, Free Size)');
+    if (!name) return toast.error('Enter a size (e.g. 2.4, Free Size)');
     if (manualSizes.some((s) => s.size === name)) return toast.error('That size is already added');
     setManualSizes((prev) => [...prev, { size: name, stock: manualSizeStock || '0' }]);
     setManualSizeName('');
     setManualSizeStock('');
+  }
+
+  // One tap to add 2.2 / 2.4 / 2.6 / 2.8 / 2.10, each with the stock typed above.
+  function addStandardBangleSizes() {
+    setManualSizes((prev) => {
+      const existing = new Set(prev.map((s) => s.size));
+      const toAdd = BANGLE_SIZES
+        .filter((size) => !existing.has(size))
+        .map((size) => ({ size, stock: manualSizeStock || '0' }));
+      return [...prev, ...toAdd];
+    });
   }
 
   function removeManualSize(name) {
@@ -111,7 +121,7 @@ export default function BulkAddProductsPage() {
     return data.url;
   }
 
-  // Size chart — supports multiple images. Selecting several files at once
+  // Size guide — supports multiple images. Selecting several files at once
   // uploads each in turn and appends every resulting URL to the shared array.
   async function handleSizeChartFilesChange(e) {
     const selected = Array.from(e.target.files || []);
@@ -125,9 +135,9 @@ export default function BulkAddProductsPage() {
         uploaded.push(url);
       }
       setSizeChart((prev) => [...prev, ...uploaded]);
-      toast.success(`${uploaded.length} size chart image${uploaded.length > 1 ? 's' : ''} uploaded`);
+      toast.success(`${uploaded.length} size guide image${uploaded.length > 1 ? 's' : ''} uploaded`);
     } catch (err) {
-      toast.error(err.message || 'Failed to upload size chart');
+      toast.error(err.message || 'Failed to upload size guide');
     } finally {
       setSizeChartUploading(false);
       e.target.value = '';
@@ -181,7 +191,12 @@ export default function BulkAddProductsPage() {
           category,
           skuPrefix,
           description,
-          fabric,
+          material,
+          finish,
+          stoneType,
+          piecesInSet: Number(piecesInSet) || 1,
+          occasion,
+          careInstructions,
           weight: Number(weight),
           price: Number(price),
           compareAtPrice: Number(compareAtPrice) || 0,
@@ -189,8 +204,6 @@ export default function BulkAddProductsPage() {
           images: imageUrls,
           isReadyToShip,
           sizeChart,
-          sleeveOptions,
-          zipOptions,
         }),
       });
 
@@ -221,9 +234,8 @@ export default function BulkAddProductsPage() {
     <div className="max-w-3xl">
       <h1 className="font-display text-2xl font-bold text-brand-magenta mb-1">Bulk Add Products</h1>
       <p className="text-sm text-brand-ink/50 mb-6">
-        One category, description, fabric, and weight applied to every product. Each image you upload becomes
+        One category, description, material, finish and weight applied to every piece. Each image you upload becomes
         its own product — titles are generated automatically from the category, and SKUs from the code below.
-        Pant/Shawl add-on options can be set afterward from each product's own edit page.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-5">
@@ -233,7 +245,7 @@ export default function BulkAddProductsPage() {
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none"
+              className={FIELD}
               required
             >
               <option value="">Select category...</option>
@@ -253,12 +265,12 @@ export default function BulkAddProductsPage() {
             <input
               value={skuPrefix}
               onChange={(e) => setSkuPrefix(e.target.value)}
-              placeholder="e.g. MT"
-              className="w-full px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none"
+              placeholder="e.g. ST"
+              className={FIELD}
               required
             />
             <p className="text-xs text-brand-ink/40 mt-1">
-              SKUs auto-generate as {skuPrefix ? skuPrefix.toUpperCase() : 'MT'}001, {skuPrefix ? skuPrefix.toUpperCase() : 'MT'}002...
+              SKUs auto-generate as {skuPrefix ? skuPrefix.toUpperCase() : 'ST'}001, {skuPrefix ? skuPrefix.toUpperCase() : 'ST'}002...
             </p>
           </div>
         </div>
@@ -270,7 +282,7 @@ export default function BulkAddProductsPage() {
               type="number"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none"
+              className={FIELD}
               required
             />
           </div>
@@ -280,29 +292,59 @@ export default function BulkAddProductsPage() {
               type="number"
               value={compareAtPrice}
               onChange={(e) => setCompareAtPrice(e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none"
+              className={FIELD}
             />
+          </div>
+        </div>
+
+        {/* Jewellery attributes */}
+        <div className="grid sm:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Material</label>
+            <select value={material} onChange={(e) => setMaterial(e.target.value)} className={FIELD}>
+              <option value="">— Not specified —</option>
+              {MATERIALS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Finish / plating</label>
+            <select value={finish} onChange={(e) => setFinish(e.target.value)} className={FIELD}>
+              <option value="">— Not specified —</option>
+              {FINISHES.map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Stone / decorative work</label>
+            <select value={stoneType} onChange={(e) => setStoneType(e.target.value)} className={FIELD}>
+              <option value="">— None —</option>
+              {STONE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
           </div>
         </div>
 
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Fabric</label>
+            <label className="block text-sm font-medium mb-1">Pieces in a set</label>
             <input
-              value={fabric}
-              onChange={(e) => setFabric(e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none"
+              type="number"
+              min="1"
+              value={piecesInSet}
+              onChange={(e) => setPiecesInSet(e.target.value)}
+              className={FIELD}
             />
+            <p className="text-xs text-brand-ink/40 mt-1">
+              1 = sold singly. Enter 4 for a set of 4 bangles, 2 for a pair, and so on.
+            </p>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Weight per piece (grams)</label>
+            <label className="block text-sm font-medium mb-1">Weight per set / piece (grams)</label>
             <input
               type="number"
               min="1"
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
-              placeholder="e.g. 250"
-              className="w-full px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none"
+              placeholder="e.g. 120"
+              className={FIELD}
               required
             />
             <p className="text-xs text-brand-ink/40 mt-1">
@@ -312,59 +354,47 @@ export default function BulkAddProductsPage() {
         </div>
 
         <div>
+          <label className="block text-sm font-medium mb-2">Occasion (optional)</label>
+          <div className="flex flex-wrap gap-3">
+            {OCCASIONS.map((opt) => (
+              <label key={opt} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={occasion.includes(opt)}
+                  onChange={() => toggleOccasion(opt)}
+                  className="w-4 h-4"
+                />
+                {opt}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
           <label className="block text-sm font-medium mb-1">Description</label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none"
+            className={FIELD}
           />
         </div>
 
-        {/* Sleeve Type / Zip Type — product-level, multi-select. Applied to
-            every product in this batch. Leave both unchecked for categories
-            where these don't apply (sarees, dupattas, etc). If any are
-            checked, customers must choose one of each on the storefront
-            before adding the product to cart. */}
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Sleeve Type Options (optional)</label>
-            <div className="flex flex-wrap gap-3">
-              {['Full Sleeve', 'Half Sleeve', 'Elbow Sleeve', 'Sleeveless'].map((opt) => (
-                <label key={opt} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={sleeveOptions.includes(opt)}
-                    onChange={() => toggleSleeveOption(opt)}
-                    className="w-4 h-4"
-                  />
-                  {opt}
-                </label>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">Zip Type Options (optional)</label>
-            <div className="flex flex-wrap gap-3">
-              {['With Zip', 'Without Zip'].map((opt) => (
-                <label key={opt} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={zipOptions.includes(opt)}
-                    onChange={() => toggleZipOption(opt)}
-                    className="w-4 h-4"
-                  />
-                  {opt}
-                </label>
-              ))}
-            </div>
-          </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Care instructions (optional)</label>
+          <textarea
+            value={careInstructions}
+            onChange={(e) => setCareInstructions(e.target.value)}
+            rows={2}
+            placeholder="e.g. Keep away from water and perfume. Store in the box provided."
+            className={FIELD}
+          />
         </div>
 
-        {/* Size chart — optional, shared across every product in this batch */}
+        {/* Size guide — optional, shared across every product in this batch */}
         <div>
           <label className="block text-sm font-medium mb-1">
-            Size chart images (optional — applied to every product in this batch; falls back to the category's size chart if left empty)
+            Size guide images (optional — e.g. how to measure your bangle size; applied to every product in this batch, falls back to the category's size guide if left empty)
           </label>
           <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
             {sizeChart.map((url, idx) => (
@@ -417,14 +447,14 @@ export default function BulkAddProductsPage() {
             <div className="flex flex-wrap gap-3">
               {categorySizes.map((size) => (
                 <div key={size} className="flex items-center gap-2">
-                  <span className="text-xs font-semibold w-8">{size}</span>
+                  <span className="text-xs font-semibold min-w-[2rem]">{size}</span>
                   <input
                     type="number"
                     min="0"
                     value={stockBySize[size] ?? ''}
                     onChange={(e) => setStockBySize((prev) => ({ ...prev, [size]: e.target.value }))}
                     placeholder="0"
-                    className="w-20 px-2 py-1.5 text-sm rounded-lg border border-brand-ink/10 outline-none"
+                    className="w-20 px-2 py-1.5 text-sm rounded-lg border border-brand-ink/10 outline-none bg-white"
                   />
                 </div>
               ))}
@@ -437,7 +467,7 @@ export default function BulkAddProductsPage() {
           <div className="border border-brand-gold/40 bg-brand-gold/5 rounded-lg p-3">
             <p className="text-sm font-medium mb-1">No sizes configured for this category</p>
             <p className="text-xs text-brand-ink/50 mb-3">
-              Add sizes here for this batch, or go to Categories and set sizes so this shows automatically next time.
+              Add sizes here for this batch (bangle sizes like 2.4, or "Free Size" for adjustable pieces), or go to Categories and set sizes so this shows automatically next time.
             </p>
 
             <div className="flex flex-wrap items-end gap-2 mb-3">
@@ -446,8 +476,8 @@ export default function BulkAddProductsPage() {
                 <input
                   value={manualSizeName}
                   onChange={(e) => setManualSizeName(e.target.value)}
-                  placeholder="e.g. S, Free Size"
-                  className="w-32 px-2 py-1.5 text-sm rounded-lg border border-brand-ink/10 outline-none"
+                  placeholder="e.g. 2.4, Free Size"
+                  className="w-36 px-2 py-1.5 text-sm rounded-lg border border-brand-ink/10 outline-none bg-white"
                 />
               </div>
               <div>
@@ -458,7 +488,7 @@ export default function BulkAddProductsPage() {
                   value={manualSizeStock}
                   onChange={(e) => setManualSizeStock(e.target.value)}
                   placeholder="0"
-                  className="w-24 px-2 py-1.5 text-sm rounded-lg border border-brand-ink/10 outline-none"
+                  className="w-24 px-2 py-1.5 text-sm rounded-lg border border-brand-ink/10 outline-none bg-white"
                 />
               </div>
               <button
@@ -467,6 +497,13 @@ export default function BulkAddProductsPage() {
                 className="flex items-center gap-1 text-sm border rounded-lg px-3 py-1.5 hover:border-brand-magenta transition-colors"
               >
                 <Plus size={14} /> Add
+              </button>
+              <button
+                type="button"
+                onClick={addStandardBangleSizes}
+                className="flex items-center gap-1 text-sm border rounded-lg px-3 py-1.5 hover:border-brand-magenta transition-colors"
+              >
+                <Plus size={14} /> Add all bangle sizes ({BANGLE_SIZES.join(', ')})
               </button>
             </div>
 

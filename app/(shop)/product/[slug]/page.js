@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Fraunces, Inter } from 'next/font/google';
 import { ShoppingBag, Zap, Heart, Share2, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { formatINR } from '@/lib/utils';
-import { getSizeStock, getCombinedStock } from '@/lib/stock';
+import { getSizeStock } from '@/lib/stock';
 import { resizeImage, buildSrcSet } from '@/lib/image';
 import { useCart } from '@/components/CartContext';
 import ColorSizeSelector from '@/components/ColorSizeSelector';
@@ -24,7 +24,6 @@ const body = Inter({ subsets: ['latin'], weight: ['400', '500', '600', '700'], v
 //   Text       #2D1028  headings + body, dark buttons
 //   Accent     #F8D7E3  soft washes and hovers
 const PRIMARY = '#C2185B';
-const GOLD = '#D4A017';
 const SKELETON = 'rgba(248, 215, 227, 0.45)'; // loading placeholders on white
 const INK = '#2D1028';
 const ACCENT = '#F8D7E3';
@@ -34,7 +33,6 @@ const GREY = 'rgba(45, 16, 40, 0.75)';
 const NEUTRAL = 'rgba(45, 16, 40, 0.55)';
 const HAIRLINE = 'rgba(45, 16, 40, 0.12)';
 const GOLD_LINE = 'rgba(212, 160, 23, 0.55)'; // thin decorative dividers
-const LINE = HAIRLINE;
 
 // Rounding scale: gallery / modals 20px · thumbnails 12px · buttons, badges, chips fully round.
 const R_LG = '20px';
@@ -57,7 +55,7 @@ function ProductSkeleton() {
     <div className={`${body.className} min-h-screen`} style={{ background: PAPER }}>
       <div className="max-w-5xl mx-auto px-5 sm:px-8 pt-4 sm:pt-16">
         <div className="grid sm:grid-cols-2 gap-4 sm:gap-16 animate-pulse">
-          <div className="w-full aspect-[3/4] sm:aspect-[4/5]" style={{ background: SKELETON, borderRadius: R_LG }} />
+          <div className="w-full aspect-square" style={{ background: SKELETON, borderRadius: R_LG }} />
           <div className="flex flex-col gap-4">
             <div className="h-3 w-24 rounded-full" style={{ background: SKELETON }} />
             <div className="h-8 w-3/4 rounded-full" style={{ background: SKELETON }} />
@@ -78,16 +76,12 @@ export default function ProductPage() {
   const [activeVariant, setActiveVariant] = useState(null);
   const [activeImage, setActiveImage] = useState(0);
   const [activeSize, setActiveSize] = useState('');
-  const [activeSleeve, setActiveSleeve] = useState('');
-  const [activeZip, setActiveZip] = useState('');
-  const [activePantId, setActivePantId] = useState('');
-  const [activeShawlId, setActiveShawlId] = useState('');
   const [qty, setQty] = useState(1);
   const [wished, setWished] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [lightboxImg, setLightboxImg] = useState(null);
 
-  // Size chart carousel modal
+  // Size guide carousel modal
   const [sizeChartOpen, setSizeChartOpen] = useState(false);
   const [sizeChartIndex, setSizeChartIndex] = useState(0);
 
@@ -132,32 +126,36 @@ export default function ProductPage() {
     return <ProductSkeleton />;
   }
 
-  const { product, reviews, related } = data;
+  const { product, related } = data;
   const images = activeVariant?.images || [];
-  const discount = activeVariant?.compareAtPrice > activeVariant?.price
-    ? Math.round(((activeVariant.compareAtPrice - activeVariant.price) / activeVariant.compareAtPrice) * 100)
+  const unitPrice = activeVariant?.price || 0;
+  const unitCompareAtPrice = activeVariant?.compareAtPrice > activeVariant?.price
+    ? activeVariant.compareAtPrice
+    : 0;
+  const discount = unitCompareAtPrice > unitPrice
+    ? Math.round(((unitCompareAtPrice - unitPrice) / unitCompareAtPrice) * 100)
     : 0;
 
+  // Size guide: the product's own images, else the category's fallback.
   const sizeChartImages = product.sizeChart?.length ? product.sizeChart : (product.category?.sizeChart || []);
 
   const selectedSizeStock = getSizeStock(activeVariant, activeSize);
   const sizeOutOfStock = !!activeSize && selectedSizeStock <= 0;
 
-  const selectedPant = product.pantOptions?.find((p) => p._id === activePantId) || null;
-  const selectedShawl = product.shawlOptions?.find((s) => s._id === activeShawlId) || null;
-  const addonTotal = (selectedPant?.price || 0) + (selectedShawl?.price || 0);
-  const unitPrice = (activeVariant?.price || 0) + addonTotal;
-  const unitCompareAtPrice = activeVariant?.compareAtPrice > activeVariant?.price
-    ? activeVariant.compareAtPrice + addonTotal
-    : 0;
+  // Jewellery details shown under the price. Empty values are skipped.
+  const details = [
+    ['Material', product.material],
+    ['Finish', product.finish],
+    ['Stone work', product.stoneType],
+    ['Set contains', product.piecesInSet > 1 ? `${product.piecesInSet} pieces` : ''],
+    ['Occasion', product.occasion?.join(', ')],
+  ].filter(([, value]) => value);
 
+  // Max quantity the shopper can add for the chosen size.
+  // Infinity = no size picked yet, so no cap is applied.
   function stockCap() {
-    return getCombinedStock(activeVariant, activeSize, {
-      pantOptions: product.pantOptions,
-      pantOptionId: activePantId,
-      shawlOptions: product.shawlOptions,
-      shawlOptionId: activeShawlId,
-    });
+    if (!activeSize) return Infinity;
+    return getSizeStock(activeVariant, activeSize);
   }
 
   function prevImage() { setActiveImage((i) => (i === 0 ? images.length - 1 : i - 1)); }
@@ -184,39 +182,11 @@ export default function ProductPage() {
 
   function handleSizeChange(size) {
     setActiveSize(size);
-    const stock = getCombinedStock(activeVariant, size, {
-      pantOptions: product.pantOptions,
-      pantOptionId: activePantId,
-      shawlOptions: product.shawlOptions,
-      shawlOptionId: activeShawlId,
-    });
+    const stock = getSizeStock(activeVariant, size);
     setQty((q) => (stock > 0 && stock !== Infinity ? Math.min(q, stock) : 1));
   }
 
-  function handlePantChange(id) {
-    setActivePantId(id);
-    const stock = getCombinedStock(activeVariant, activeSize, {
-      pantOptions: product.pantOptions,
-      pantOptionId: id,
-      shawlOptions: product.shawlOptions,
-      shawlOptionId: activeShawlId,
-    });
-    if (stock !== Infinity) setQty((q) => Math.min(q, Math.max(stock, 1)));
-  }
-
-  function handleShawlChange(id) {
-    setActiveShawlId(id);
-    const stock = getCombinedStock(activeVariant, activeSize, {
-      pantOptions: product.pantOptions,
-      pantOptionId: activePantId,
-      shawlOptions: product.shawlOptions,
-      shawlOptionId: id,
-    });
-    if (stock !== Infinity) setQty((q) => Math.min(q, Math.max(stock, 1)));
-  }
-
   function buildCartPayload() {
-    const stock = stockCap();
     return {
       productId: product._id,
       variantId: activeVariant._id,
@@ -225,26 +195,16 @@ export default function ProductPage() {
       image: activeVariant.images?.[0], // original URL — cart keeps full quality
       color: activeVariant.color,
       size: activeSize,
-      sleeveType: activeSleeve,
-      zipType: activeZip,
-      pantOption: selectedPant
-        ? { id: selectedPant._id, name: selectedPant.name, price: selectedPant.price, image: selectedPant.image, sku: selectedPant.sku }
-        : null,
-      shawlOption: selectedShawl
-        ? { id: selectedShawl._id, name: selectedShawl.name, price: selectedShawl.price, image: selectedShawl.image, sku: selectedShawl.sku }
-        : null,
       price: unitPrice,
       qty,
-      stock,
+      stock: stockCap(),
     };
   }
 
   function validateSelection() {
     if (!activeSize) { toast.error('Please select a size'); return false; }
-    if (product.sleeveOptions?.length && !activeSleeve) { toast.error('Please select a sleeve type'); return false; }
-    if (product.zipOptions?.length && !activeZip) { toast.error('Please select a zip type'); return false; }
     const stock = stockCap();
-    if (stock <= 0) { toast.error('This combination is out of stock'); return false; }
+    if (stock <= 0) { toast.error('This size is out of stock'); return false; }
     if (qty > stock) {
       toast.error(`Only ${stock} left in stock`);
       setQty(stock);
@@ -274,10 +234,10 @@ export default function ProductPage() {
 
           {/* ── Gallery ── */}
           <div className="min-w-0 sm:sticky sm:top-10 sm:self-start">
-            {/* The image fills the whole frame edge-to-edge (object-cover),
-                anchored to the top so faces / necklines are never cut off. */}
+            {/* Square frame — jewellery photos are mostly 1:1 and the whole
+                piece (a stack of bangles, a necklace) must stay visible. */}
             <div
-              className="relative w-full aspect-[3/4] sm:aspect-[4/5] overflow-hidden"
+              className="relative w-full aspect-square overflow-hidden"
               style={{ background: PAPER, borderRadius: R_LG, border: `1px solid ${HAIRLINE}` }}
             >
               {mainImage && (
@@ -288,11 +248,11 @@ export default function ProductPage() {
                   sizes={MAIN_SIZES}
                   alt={product.name}
                   width={720}
-                  height={900}
+                  height={720}
                   fetchPriority="high"
                   loading="eager"
                   decoding="async"
-                  className="absolute inset-0 w-full h-full object-contain sm:object-cover sm:object-top"
+                  className="absolute inset-0 w-full h-full object-contain sm:object-cover sm:object-center"
                 />
               )}
 
@@ -327,14 +287,14 @@ export default function ProductPage() {
               )}
             </div>
 
-            {/* Thumbnails — tiny 96x120 CDN crops instead of full-size images */}
+            {/* Thumbnails — tiny 112x112 CDN crops instead of full-size images */}
             {images.length > 1 && (
               <div className="flex gap-2.5 sm:gap-3 mt-3 overflow-x-auto py-1 px-1 -mx-1">
                 {images.map((img, i) => (
                   <button
                     key={i}
                     onClick={() => setActiveImage(i)}
-                    className="relative w-12 h-[60px] overflow-hidden shrink-0 transition-all"
+                    className="relative w-14 h-14 overflow-hidden shrink-0 transition-all"
                     style={{
                       opacity: i === activeImage ? 1 : 0.5,
                       borderRadius: R_MD,
@@ -342,10 +302,10 @@ export default function ProductPage() {
                     }}
                   >
                     <img
-                      src={resizeImage(img, 96, 120)}
+                      src={resizeImage(img, 112, 112)}
                       alt=""
-                      width={48}
-                      height={60}
+                      width={56}
+                      height={56}
                       loading="lazy"
                       decoding="async"
                       className="absolute inset-0 w-full h-full object-cover"
@@ -408,13 +368,25 @@ export default function ProductPage() {
               {product.name}
             </h1>
 
-            {product.isReadyToShip && (
-              <span
-                className="inline-block mt-2 sm:mt-2.5 px-3.5 py-1 text-[11px] font-bold uppercase tracking-wide w-fit rounded-full"
-                style={{ background: ACCENT, color: INK }}
-              >
-                Ready to Ship
-              </span>
+            {(product.isReadyToShip || product.piecesInSet > 1) && (
+              <div className="flex flex-wrap gap-2 mt-2 sm:mt-2.5">
+                {product.isReadyToShip && (
+                  <span
+                    className="inline-block px-3.5 py-1 text-[11px] font-bold uppercase tracking-wide w-fit rounded-full"
+                    style={{ background: ACCENT, color: INK }}
+                  >
+                    Ready to Ship
+                  </span>
+                )}
+                {product.piecesInSet > 1 && (
+                  <span
+                    className="inline-block px-3.5 py-1 text-[11px] font-bold uppercase tracking-wide w-fit rounded-full"
+                    style={{ border: `1px solid ${GOLD_LINE}`, color: INK }}
+                  >
+                    Set of {product.piecesInSet}
+                  </span>
+                )}
+              </div>
             )}
 
             <div className="flex items-baseline gap-3 mt-3 sm:mt-6 flex-wrap">
@@ -435,16 +407,17 @@ export default function ProductPage() {
                 </span>
               )}
             </div>
-            {addonTotal > 0 && (
-              <p className="text-xs font-medium mt-1" style={{ color: GREY }}>
-                Includes {formatINR(addonTotal)} for selected add-ons
-              </p>
-            )}
 
-            {product.fabric && (
-              <p className="text-sm font-medium mt-3" style={{ color: GREY }}>
-                Fabric <span className="font-bold" style={{ color: INK }}>— {product.fabric}</span>
-              </p>
+            {/* Jewellery details: material, finish, stone work, set size, occasion */}
+            {details.length > 0 && (
+              <dl className="mt-4 sm:mt-5 grid grid-cols-[104px_1fr] gap-x-4 gap-y-2 text-sm">
+                {details.map(([label, value]) => (
+                  <div key={label} className="contents">
+                    <dt className="font-medium" style={{ color: NEUTRAL }}>{label}</dt>
+                    <dd className="font-bold" style={{ color: INK }}>{value}</dd>
+                  </div>
+                ))}
+              </dl>
             )}
 
             <div className="mt-4 pt-4 sm:mt-8 sm:pt-8" style={{ borderTop: `1px solid ${GOLD_LINE}` }}>
@@ -457,18 +430,12 @@ export default function ProductPage() {
                 categoryType={product.category?.type}
                 sizeChartImages={sizeChartImages}
                 onViewSizeChart={() => { setSizeChartIndex(0); setSizeChartOpen(true); }}
-                sleeveOptions={product.sleeveOptions}
-                zipOptions={product.zipOptions}
-                activeSleeve={activeSleeve}
-                onSleeveChange={setActiveSleeve}
-                activeZip={activeZip}
-                onZipChange={setActiveZip}
-                pantOptions={product.pantOptions}
-                activePantId={activePantId}
-                onPantChange={handlePantChange}
-                shawlOptions={product.shawlOptions}
-                activeShawlId={activeShawlId}
-                onShawlChange={handleShawlChange}
+                // Clothing-only props. Empty on purpose until ColorSizeSelector
+                // itself is cleaned up — then these four lines can be deleted.
+                sleeveOptions={[]}
+                zipOptions={[]}
+                pantOptions={[]}
+                shawlOptions={[]}
                 formatINR={formatINR}
               />
             </div>
@@ -542,6 +509,18 @@ export default function ProductPage() {
                   Description
                 </h3>
                 <p>{product.description}</p>
+              </div>
+            )}
+
+            {product.careInstructions && (
+              <div
+                className="mt-4 p-5 text-sm leading-relaxed font-medium"
+                style={{ color: GREY, background: PAPER, border: `1px solid ${HAIRLINE}`, borderRadius: R_LG }}
+              >
+                <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] mb-3" style={{ color: INK }}>
+                  Care
+                </h3>
+                <p>{product.careInstructions}</p>
               </div>
             )}
 
@@ -634,7 +613,7 @@ export default function ProductPage() {
         document.body
       )}
 
-      {/* Size chart modal */}
+      {/* Size guide modal */}
       {mounted && sizeChartOpen && sizeChartImages.length > 0 && createPortal(
         <div
           onClick={() => setSizeChartOpen(false)}
@@ -646,7 +625,7 @@ export default function ProductPage() {
               onClick={() => setSizeChartOpen(false)}
               className="absolute -top-11 right-0 sm:-top-2 sm:-right-11 w-9 h-9 flex items-center justify-center rounded-full"
               style={{ background: 'rgba(248, 215, 227, 0.25)', color: PAPER }}
-              aria-label="Close size chart"
+              aria-label="Close size guide"
             >
               <X size={20} />
             </button>
@@ -654,7 +633,7 @@ export default function ProductPage() {
             <div className="relative w-full aspect-square" style={{ background: PAPER, borderRadius: R_LG, overflow: 'hidden' }}>
               <img
                 src={resizeImage(sizeChartImages[sizeChartIndex], 900)}
-                alt={`Size chart ${sizeChartIndex + 1} of ${sizeChartImages.length}`}
+                alt={`Size guide ${sizeChartIndex + 1} of ${sizeChartImages.length}`}
                 decoding="async"
                 className="absolute inset-0 w-full h-full object-contain"
               />
@@ -664,7 +643,7 @@ export default function ProductPage() {
                   <button
                     onClick={prevSizeChart}
                     className="absolute left-0 top-0 bottom-0 w-1/4 flex items-center justify-start pl-2"
-                    aria-label="Previous size chart image"
+                    aria-label="Previous size guide image"
                   >
                     <span className="flex items-center justify-center w-9 h-9 rounded-full" style={{ background: 'rgba(255,255,255,0.9)', border: `1px solid ${HAIRLINE}` }}>
                       <ChevronLeft size={20} strokeWidth={2} style={{ color: INK }} />
@@ -673,7 +652,7 @@ export default function ProductPage() {
                   <button
                     onClick={nextSizeChart}
                     className="absolute right-0 top-0 bottom-0 w-1/4 flex items-center justify-end pr-2"
-                    aria-label="Next size chart image"
+                    aria-label="Next size guide image"
                   >
                     <span className="flex items-center justify-center w-9 h-9 rounded-full" style={{ background: 'rgba(255,255,255,0.9)', border: `1px solid ${HAIRLINE}` }}>
                       <ChevronRight size={20} strokeWidth={2} style={{ color: INK }} />

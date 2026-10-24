@@ -4,29 +4,27 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, Upload, Loader2, X } from 'lucide-react';
+import { MATERIALS, FINISHES, STONE_TYPES, OCCASIONS, BANGLE_SIZES } from '@/lib/jewellery';
 
-// Design tokens — same white/peach minimalist system as the rest of the site.
-const INK = '#241B21';
-const INK_SOFT = '#9C877D';
-const PEACH = '#D9946A';
-const PEACH_WASH = '#FBE8D9';
-const LINE = '#EEE3DA';
+// Palette: Primary #C2185B · Secondary #D4A017 · Background #FFF8F3 · Text #2D1028 · Accent #F8D7E3
+// Keep in sync with the other admin pages.
+const INK = '#2D1028';
+const INK_SOFT = 'rgba(45, 16, 40, 0.6)';
+const PRIMARY = '#C2185B';
+const ACCENT = '#F8D7E3';
+const LINE = '#F1DCE4'; // soft pink border, derived from the accent
 const PAPER = '#FFFFFF';
-const DISABLED_BG = '#F7F2EC';
+const DISABLED_BG = '#FFF8F3';
 
 function emptyVariant() {
   return {
     color: '',
-    colorHex: '#D9946A',
+    colorHex: '#C2185B',
     images: [''],
     price: '',
     compareAtPrice: '',
     sizes: [{ size: '', stock: 0, sku: '' }],
   };
-}
-
-function emptyAddonOption() {
-  return { name: '', image: '', price: '', stock: '', sku: '' };
 }
 
 function normalizeSizeChart(value) {
@@ -56,6 +54,8 @@ const labelStyle = {
   fontFamily: 'sans-serif',
 };
 
+const hintStyle = { fontWeight: '400', textTransform: 'none', letterSpacing: 0 };
+
 const cardStyle = {
   background: PAPER,
   border: `1px solid ${LINE}`,
@@ -73,6 +73,34 @@ const sectionHeadStyle = {
   fontFamily: 'sans-serif',
   marginBottom: '12px',
 };
+
+const focusOn = (e) => (e.target.style.borderColor = PRIMARY);
+const focusOff = (e) => (e.target.style.borderColor = LINE);
+
+// Dropdown for a jewellery attribute. If the product already has a value
+// that isn't in the standard list (e.g. typed by hand earlier), it is kept
+// as an extra option so editing never silently drops it.
+function AttributeSelect({ label, hint, value, options, onChange, emptyLabel }) {
+  const hasCustom = value && !options.includes(value);
+  return (
+    <div>
+      <label style={labelStyle}>
+        {label} {hint && <span style={hintStyle}>{hint}</span>}
+      </label>
+      <select
+        style={inputStyle}
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={focusOn}
+        onBlur={focusOff}
+      >
+        <option value="">{emptyLabel}</option>
+        {hasCustom && <option value={value}>{value}</option>}
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+}
 
 function ImageSlot({ value, onChange, onRemove, showRemove }) {
   const [uploading, setUploading] = useState(false);
@@ -106,8 +134,8 @@ function ImageSlot({ value, onChange, onRemove, showRemove }) {
           width: '48px',
           height: '48px',
           borderRadius: '4px',
-          border: `1.5px dashed ${PEACH}`,
-          background: PEACH_WASH,
+          border: `1.5px dashed ${PRIMARY}`,
+          background: ACCENT,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -119,7 +147,7 @@ function ImageSlot({ value, onChange, onRemove, showRemove }) {
         ) : uploading ? (
           <Loader2 size={16} className="animate-spin" style={{ color: INK }} />
         ) : (
-          <Upload size={14} style={{ color: PEACH }} />
+          <Upload size={14} style={{ color: PRIMARY }} />
         )}
         {uploading && value && (
           <div className="absolute inset-0 flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.7)' }}>
@@ -134,8 +162,8 @@ function ImageSlot({ value, onChange, onRemove, showRemove }) {
         style={{ ...inputStyle, marginTop: 0, flex: 1 }}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onFocus={(e) => (e.target.style.borderColor = PEACH)}
-        onBlur={(e) => (e.target.style.borderColor = LINE)}
+        onFocus={focusOn}
+        onBlur={focusOff}
       />
 
       {showRemove && (
@@ -147,98 +175,7 @@ function ImageSlot({ value, onChange, onRemove, showRemove }) {
   );
 }
 
-// Reusable editor for a list of named add-on options (pants / shawls).
-// Each option gets its own image, extra price (added on top of the
-// variant price when a customer picks it), stock, and optional SKU.
-function AddonOptionsEditor({ title, options, onAdd, onUpdate, onRemove }) {
-  return (
-    <div style={cardStyle}>
-      <div className="flex items-center justify-between mb-3">
-        <p style={{ ...sectionHeadStyle, marginBottom: 0 }}>{title}</p>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="flex items-center gap-1 text-sm font-medium px-3 py-1.5"
-          style={{
-            background: PAPER,
-            color: PEACH,
-            border: `1px solid ${PEACH}`,
-            borderRadius: '4px',
-            fontFamily: 'sans-serif',
-            cursor: 'pointer',
-          }}
-        >
-          <Plus size={14} /> Add {title.replace(/s$/, '')}
-        </button>
-      </div>
-      <p style={{ fontSize: '12px', color: INK_SOFT, fontFamily: 'sans-serif', marginBottom: options.length ? '12px' : 0 }}>
-        Leave empty if {title.toLowerCase()} don't apply to this product. The price entered is ADDED
-        on top of the variant price when a customer selects it. Customers can also choose "None".
-      </p>
-
-      {options.map((opt, idx) => (
-        <div
-          key={idx}
-          className="flex flex-col sm:flex-row sm:items-start gap-3 mb-3 pb-3"
-          style={{ borderBottom: idx < options.length - 1 ? `1px solid ${LINE}` : 'none' }}
-        >
-          <ImageSlot
-            value={opt.image}
-            onChange={(url) => onUpdate(idx, 'image', url)}
-            onRemove={() => onUpdate(idx, 'image', '')}
-            showRemove={!!opt.image}
-          />
-          <div className="grid sm:grid-cols-4 gap-2 flex-1">
-            <input
-              placeholder="Name (e.g. Cotton Palazzo)"
-              style={{ ...inputStyle, marginTop: 0 }}
-              value={opt.name}
-              onChange={(e) => onUpdate(idx, 'name', e.target.value)}
-              onFocus={(e) => (e.target.style.borderColor = PEACH)}
-              onBlur={(e) => (e.target.style.borderColor = LINE)}
-            />
-            <input
-              type="number"
-              placeholder="Extra price ₹"
-              style={{ ...inputStyle, marginTop: 0 }}
-              value={opt.price}
-              onChange={(e) => onUpdate(idx, 'price', e.target.value)}
-              onFocus={(e) => (e.target.style.borderColor = PEACH)}
-              onBlur={(e) => (e.target.style.borderColor = LINE)}
-            />
-            <input
-              type="number"
-              placeholder="Stock"
-              style={{ ...inputStyle, marginTop: 0 }}
-              value={opt.stock}
-              onChange={(e) => onUpdate(idx, 'stock', e.target.value)}
-              onFocus={(e) => (e.target.style.borderColor = PEACH)}
-              onBlur={(e) => (e.target.style.borderColor = LINE)}
-            />
-            <input
-              placeholder="SKU (optional)"
-              style={{ ...inputStyle, marginTop: 0 }}
-              value={opt.sku}
-              onChange={(e) => onUpdate(idx, 'sku', e.target.value)}
-              onFocus={(e) => (e.target.style.borderColor = PEACH)}
-              onBlur={(e) => (e.target.style.borderColor = LINE)}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => onRemove(idx)}
-            style={{ color: INK_SOFT, cursor: 'pointer', flexShrink: 0, marginTop: '12px' }}
-          >
-            <Trash2 size={16} />
-          </button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// Video upload slot — mirrors ImageSlot's upload pattern but renders a
-// playable <video> thumbnail instead of an <img>, and accepts video/* files.
+// Video upload slot — renders a playable <video> thumbnail, with a remove button.
 function VideoSlot({ value, uploading, onRemove }) {
   return (
     <div className="relative overflow-hidden" style={{ borderRadius: '4px', border: `1px solid ${LINE}` }}>
@@ -265,28 +202,27 @@ export default function ProductForm({ initial, productId }) {
   const [categories, setCategories] = useState([]);
   const [form, setForm] = useState(() => {
     const base = initial || {
-      name: '', slug: '', sku: '', description: '', category: '', fabric: '', weight: '', tags: [],
+      name: '', slug: '', sku: '', description: '', category: '', weight: '', tags: [],
+      material: '', finish: '', stoneType: '', piecesInSet: 1, occasion: [], careInstructions: '',
       variants: [emptyVariant()],
       sizeChart: [],
       videos: [],
-      sleeveOptions: [],
-      zipOptions: [],
-      pantOptions: [],
-      shawlOptions: [],
       isBestSeller: false, isTopSeller: false, isActiveSeller: true, isFeatured: false, isActive: true,
       isReadyToShip: false,
     };
     return {
       ...base,
-      // Existing products saved before weight existed have 0 / undefined —
+      // Products saved before weight existed have 0 / undefined —
       // show the field empty so the admin is prompted to fill it in.
       weight: base.weight > 0 ? base.weight : '',
+      material: base.material || '',
+      finish: base.finish || '',
+      stoneType: base.stoneType || '',
+      piecesInSet: base.piecesInSet > 0 ? base.piecesInSet : 1,
+      occasion: base.occasion || [],
+      careInstructions: base.careInstructions || '',
       sizeChart: normalizeSizeChart(base.sizeChart),
       videos: base.videos || [],
-      sleeveOptions: base.sleeveOptions || [],
-      zipOptions: base.zipOptions || [],
-      pantOptions: (base.pantOptions || []).map((o) => ({ ...o })),
-      shawlOptions: (base.shawlOptions || []).map((o) => ({ ...o })),
     };
   });
   const [saving, setSaving] = useState(false);
@@ -360,6 +296,21 @@ export default function ProductForm({ initial, productId }) {
     });
   }
 
+  // Adds 2.2 / 2.4 / 2.6 / 2.8 / 2.10 to a variant, skipping sizes it
+  // already has and replacing a single blank placeholder row.
+  function addStandardBangleSizes(vIdx) {
+    setForm((f) => {
+      const variants = [...f.variants];
+      const current = variants[vIdx].sizes.filter((s) => s.size.trim() !== '' || Number(s.stock) > 0 || s.sku);
+      const existing = new Set(current.map((s) => s.size));
+      const toAdd = BANGLE_SIZES
+        .filter((size) => !existing.has(size))
+        .map((size) => ({ size, stock: 0, sku: '' }));
+      variants[vIdx] = { ...variants[vIdx], sizes: [...current, ...toAdd] };
+      return { ...f, variants };
+    });
+  }
+
   function removeSize(vIdx, sIdx) {
     setForm((f) => {
       const variants = [...f.variants];
@@ -371,22 +322,7 @@ export default function ProductForm({ initial, productId }) {
   function addVariant() { setForm((f) => ({ ...f, variants: [...f.variants, emptyVariant()] })); }
   function removeVariant(idx) { setForm((f) => ({ ...f, variants: f.variants.filter((_, i) => i !== idx) })); }
 
-  // Pant / Shawl option list handlers — same shape, different field name.
-  function addAddonOption(field) {
-    setForm((f) => ({ ...f, [field]: [...(f[field] || []), emptyAddonOption()] }));
-  }
-  function updateAddonOption(field, idx, key, value) {
-    setForm((f) => {
-      const list = [...(f[field] || [])];
-      list[idx] = { ...list[idx], [key]: value };
-      return { ...f, [field]: list };
-    });
-  }
-  function removeAddonOption(field, idx) {
-    setForm((f) => ({ ...f, [field]: (f[field] || []).filter((_, i) => i !== idx) }));
-  }
-
-  // Size chart — supports multiple images. Selecting several files at once
+  // Size guide — supports multiple images. Selecting several files at once
   // uploads each in turn and appends every resulting URL to the array.
   async function handleSizeChartFilesChange(e) {
     const files = Array.from(e.target.files || []);
@@ -404,7 +340,7 @@ export default function ProductForm({ initial, productId }) {
         uploaded.push(data.url);
       }
       setForm((f) => ({ ...f, sizeChart: [...(f.sizeChart || []), ...uploaded] }));
-      toast.success(`${uploaded.length} size chart image${uploaded.length > 1 ? 's' : ''} uploaded`);
+      toast.success(`${uploaded.length} size guide image${uploaded.length > 1 ? 's' : ''} uploaded`);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -454,7 +390,7 @@ export default function ProductForm({ initial, productId }) {
     e.preventDefault();
 
     if (!form.weight || Number(form.weight) <= 0) {
-      toast.error('Enter the product weight in grams (used for shipping)');
+      toast.error('Enter the weight in grams (used for shipping)');
       return;
     }
 
@@ -464,37 +400,31 @@ export default function ProductForm({ initial, productId }) {
     const payload = {
       ...form,
       weight: Number(form.weight) || 0,
+      material: (form.material || '').trim(),
+      finish: (form.finish || '').trim(),
+      stoneType: (form.stoneType || '').trim(),
+      piecesInSet: Math.max(1, Math.floor(Number(form.piecesInSet)) || 1),
+      occasion: form.occasion || [],
+      careInstructions: (form.careInstructions || '').trim(),
       sizeChart: form.sizeChart || [],
       videos: form.videos || [],
-      sleeveOptions: form.sleeveOptions || [],
-      zipOptions: form.zipOptions || [],
-      pantOptions: (form.pantOptions || [])
-        .filter((o) => o.name?.trim())
-        .map((o) => ({
-          name: o.name.trim(),
-          image: o.image || '',
-          price: Number(o.price) || 0,
-          stock: Number(o.stock) || 0,
-          sku: o.sku || '',
-        })),
-      shawlOptions: (form.shawlOptions || [])
-        .filter((o) => o.name?.trim())
-        .map((o) => ({
-          name: o.name.trim(),
-          image: o.image || '',
-          price: Number(o.price) || 0,
-          stock: Number(o.stock) || 0,
-          sku: o.sku || '',
-        })),
       variants: form.variants.map((v) => ({
         ...v,
         price: Number(v.price),
         compareAtPrice: Number(v.compareAtPrice) || 0,
         images: v.images.filter(Boolean),
-        sizes: v.sizes.map((s) => ({ ...s, stock: Number(s.stock) })),
+        sizes: v.sizes
+          .filter((s) => s.size.trim() !== '')
+          .map((s) => ({ ...s, size: s.size.trim(), stock: Number(s.stock) || 0 })),
       })),
     };
     delete payload.sku;
+    // Clothing-only fields from older products — never send them back.
+    delete payload.fabric;
+    delete payload.sleeveOptions;
+    delete payload.zipOptions;
+    delete payload.pantOptions;
+    delete payload.shawlOptions;
 
     const url = productId ? `/api/products/${productId}` : '/api/products';
     const method = productId ? 'PUT' : 'POST';
@@ -524,8 +454,8 @@ export default function ProductForm({ initial, productId }) {
               style={inputStyle}
               value={form.name}
               onChange={(e) => update('name', e.target.value)}
-              onFocus={(e) => (e.target.style.borderColor = PEACH)}
-              onBlur={(e) => (e.target.style.borderColor = LINE)}
+              onFocus={focusOn}
+              onBlur={focusOff}
             />
           </div>
           <div>
@@ -545,45 +475,93 @@ export default function ProductForm({ initial, productId }) {
               style={inputStyle}
               value={form.category?._id || form.category}
               onChange={(e) => update('category', e.target.value)}
-              onFocus={(e) => (e.target.style.borderColor = PEACH)}
-              onBlur={(e) => (e.target.style.borderColor = LINE)}
+              onFocus={focusOn}
+              onBlur={focusOff}
             >
               <option value="">Select category</option>
               {categories.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
             </select>
           </div>
           <div>
-            <label style={labelStyle}>Fabric</label>
-            <input
-              style={inputStyle}
-              value={form.fabric}
-              onChange={(e) => update('fabric', e.target.value)}
-              onFocus={(e) => (e.target.style.borderColor = PEACH)}
-              onBlur={(e) => (e.target.style.borderColor = LINE)}
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Weight per piece (grams) *</label>
+            <label style={labelStyle}>Weight per set / piece (grams) *</label>
             <input
               required
               type="number"
               min="1"
-              placeholder="e.g. 250"
+              placeholder="e.g. 120"
               style={inputStyle}
               value={form.weight ?? ''}
               onChange={(e) => update('weight', e.target.value)}
-              onFocus={(e) => (e.target.style.borderColor = PEACH)}
-              onBlur={(e) => (e.target.style.borderColor = LINE)}
+              onFocus={focusOn}
+              onBlur={focusOff}
             />
           </div>
+
+          {/* Jewellery attributes */}
+          <AttributeSelect
+            label="Material"
+            value={form.material}
+            options={MATERIALS}
+            onChange={(v) => update('material', v)}
+            emptyLabel="— Not specified —"
+          />
+          <AttributeSelect
+            label="Finish / plating"
+            value={form.finish}
+            options={FINISHES}
+            onChange={(v) => update('finish', v)}
+            emptyLabel="— Not specified —"
+          />
+          <AttributeSelect
+            label="Stone / decorative work"
+            hint="(optional)"
+            value={form.stoneType}
+            options={STONE_TYPES}
+            onChange={(v) => update('stoneType', v)}
+            emptyLabel="— None —"
+          />
           <div>
+            <label style={labelStyle}>
+              Pieces in a set <span style={hintStyle}>(1 = sold singly, 4 = set of 4 bangles)</span>
+            </label>
+            <input
+              type="number"
+              min="1"
+              style={inputStyle}
+              value={form.piecesInSet}
+              onChange={(e) => update('piecesInSet', e.target.value)}
+              onFocus={focusOn}
+              onBlur={focusOff}
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label style={labelStyle}>
+              Occasion <span style={hintStyle}>(optional)</span>
+            </label>
+            <div className="flex flex-wrap gap-3 mt-2">
+              {OCCASIONS.map((opt) => (
+                <label key={opt} className="flex items-center gap-1.5 text-sm cursor-pointer" style={{ color: INK, fontFamily: 'sans-serif' }}>
+                  <input
+                    type="checkbox"
+                    checked={(form.occasion || []).includes(opt)}
+                    onChange={() => toggleArrayValue('occasion', opt)}
+                    style={{ accentColor: PRIMARY, width: '15px', height: '15px' }}
+                  />
+                  {opt}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="sm:col-span-2">
             <label style={labelStyle}>Tags (comma separated)</label>
             <input
               style={inputStyle}
               value={Array.isArray(form.tags) ? form.tags.join(', ') : ''}
               onChange={(e) => update('tags', e.target.value.split(',').map((t) => t.trim()).filter(Boolean))}
-              onFocus={(e) => (e.target.style.borderColor = PEACH)}
-              onBlur={(e) => (e.target.style.borderColor = LINE)}
+              onFocus={focusOn}
+              onBlur={focusOff}
             />
           </div>
           <div className="sm:col-span-2">
@@ -593,17 +571,31 @@ export default function ProductForm({ initial, productId }) {
               rows={3}
               value={form.description}
               onChange={(e) => update('description', e.target.value)}
-              onFocus={(e) => (e.target.style.borderColor = PEACH)}
-              onBlur={(e) => (e.target.style.borderColor = LINE)}
+              onFocus={focusOn}
+              onBlur={focusOff}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label style={labelStyle}>
+              Care instructions <span style={hintStyle}>(optional — shown on the product page)</span>
+            </label>
+            <textarea
+              style={{ ...inputStyle, resize: 'vertical' }}
+              rows={2}
+              placeholder="e.g. Keep away from water and perfume. Store in the box provided."
+              value={form.careInstructions}
+              onChange={(e) => update('careInstructions', e.target.value)}
+              onFocus={focusOn}
+              onBlur={focusOff}
             />
           </div>
 
-          {/* Size chart — one or more images. If left empty, the storefront
-              falls back to this product's category size chart. */}
+          {/* Size guide — one or more images. If left empty, the storefront
+              falls back to this product's category size guide. */}
           <div className="sm:col-span-2">
             <label style={labelStyle}>
-              Size Chart <span style={{ fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>
-                (optional — shown as a gallery on the product page; falls back to the category's size chart if left empty)
+              Size Guide <span style={hintStyle}>
+                (optional — e.g. how to measure your bangle size; shown as a gallery on the product page and falls back to the category's size guide if left empty)
               </span>
             </label>
             <div className="grid grid-cols-4 sm:grid-cols-6 gap-3 mt-2">
@@ -625,7 +617,7 @@ export default function ProductForm({ initial, productId }) {
                 disabled={sizeChartUploading}
                 onClick={() => sizeChartFileRef.current?.click()}
                 className="aspect-square flex flex-col items-center justify-center gap-1 disabled:opacity-50"
-                style={{ borderRadius: '4px', border: `1.5px dashed ${PEACH}`, background: PEACH_WASH, color: PEACH, cursor: 'pointer' }}
+                style={{ borderRadius: '4px', border: `1.5px dashed ${PRIMARY}`, background: ACCENT, color: PRIMARY, cursor: 'pointer' }}
               >
                 {sizeChartUploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
                 <span style={{ fontSize: '10px', fontFamily: 'sans-serif' }}>{sizeChartUploading ? 'Uploading…' : 'Add'}</span>
@@ -639,8 +631,8 @@ export default function ProductForm({ initial, productId }) {
               the same /api/upload endpoint as images. */}
           <div className="sm:col-span-2">
             <label style={labelStyle}>
-              Product Videos <span style={{ fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>
-                (optional — shown below the image gallery on the product page)
+              Product Videos <span style={hintStyle}>
+                (optional — e.g. a wrist-show or sparkle clip, shown below the image gallery)
               </span>
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
@@ -652,56 +644,13 @@ export default function ProductForm({ initial, productId }) {
                 disabled={videoUploading}
                 onClick={() => videoFileRef.current?.click()}
                 className="h-24 flex flex-col items-center justify-center gap-1 disabled:opacity-50"
-                style={{ borderRadius: '4px', border: `1.5px dashed ${PEACH}`, background: PEACH_WASH, color: PEACH, cursor: 'pointer' }}
+                style={{ borderRadius: '4px', border: `1.5px dashed ${PRIMARY}`, background: ACCENT, color: PRIMARY, cursor: 'pointer' }}
               >
                 {videoUploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
                 <span style={{ fontSize: '10px', fontFamily: 'sans-serif' }}>{videoUploading ? 'Uploading…' : 'Add video'}</span>
               </button>
             </div>
             <input ref={videoFileRef} type="file" accept="video/*" multiple className="hidden" onChange={handleVideoFilesChange} />
-          </div>
-
-          {/* Sleeve/Zip options — product-level, not per-variant. Admin picks
-              which apply to this product; customers choose one of each on
-              the PDP before adding to cart. Leave both unchecked for products
-              where they don't apply (sarees, dupattas, jewellery, etc). */}
-          <div className="sm:col-span-2 grid sm:grid-cols-2 gap-4">
-            <div>
-              <label style={labelStyle}>
-                Sleeve Type Options <span style={{ fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
-              </label>
-              <div className="flex flex-wrap gap-3 mt-2">
-                {['Full Sleeve', 'Half Sleeve', 'Elbow Sleeve', 'Sleeveless'].map((opt) => (
-                  <label key={opt} className="flex items-center gap-1.5 text-sm cursor-pointer" style={{ color: INK, fontFamily: 'sans-serif' }}>
-                    <input
-                      type="checkbox"
-                      checked={(form.sleeveOptions || []).includes(opt)}
-                      onChange={() => toggleArrayValue('sleeveOptions', opt)}
-                      style={{ accentColor: PEACH, width: '15px', height: '15px' }}
-                    />
-                    {opt}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label style={labelStyle}>
-                Zip Type Options <span style={{ fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
-              </label>
-              <div className="flex flex-wrap gap-3 mt-2">
-                {['With Zip', 'Without Zip'].map((opt) => (
-                  <label key={opt} className="flex items-center gap-1.5 text-sm cursor-pointer" style={{ color: INK, fontFamily: 'sans-serif' }}>
-                    <input
-                      type="checkbox"
-                      checked={(form.zipOptions || []).includes(opt)}
-                      onChange={() => toggleArrayValue('zipOptions', opt)}
-                      style={{ accentColor: PEACH, width: '15px', height: '15px' }}
-                    />
-                    {opt}
-                  </label>
-                ))}
-              </div>
-            </div>
           </div>
 
           {/* Toggles */}
@@ -723,7 +672,7 @@ export default function ProductForm({ initial, productId }) {
                   type="checkbox"
                   checked={!!form[key]}
                   onChange={(e) => update(key, e.target.checked)}
-                  style={{ accentColor: PEACH, width: '15px', height: '15px' }}
+                  style={{ accentColor: PRIMARY, width: '15px', height: '15px' }}
                 />
                 {label}
               </label>
@@ -742,19 +691,19 @@ export default function ProductForm({ initial, productId }) {
             className="flex items-center gap-1 text-sm font-medium px-4 py-2 transition-colors"
             style={{
               background: PAPER,
-              color: PEACH,
-              border: `1px solid ${PEACH}`,
+              color: PRIMARY,
+              border: `1px solid ${PRIMARY}`,
               borderRadius: '4px',
               fontFamily: 'sans-serif',
               cursor: 'pointer',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = PEACH;
+              e.currentTarget.style.background = PRIMARY;
               e.currentTarget.style.color = PAPER;
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = PAPER;
-              e.currentTarget.style.color = PEACH;
+              e.currentTarget.style.color = PRIMARY;
             }}
           >
             <Plus size={16} /> Add Variant
@@ -784,12 +733,12 @@ export default function ProductForm({ initial, productId }) {
 
             <div className="grid sm:grid-cols-4 gap-3 mb-3">
               <input
-                placeholder="Color name (e.g. Green)"
+                placeholder="Color name (e.g. Maroon)"
                 style={inputStyle}
                 value={v.color}
                 onChange={(e) => updateVariant(vIdx, 'color', e.target.value)}
-                onFocus={(e) => (e.target.style.borderColor = PEACH)}
-                onBlur={(e) => (e.target.style.borderColor = LINE)}
+                onFocus={focusOn}
+                onBlur={focusOff}
               />
               <input
                 type="color"
@@ -803,8 +752,8 @@ export default function ProductForm({ initial, productId }) {
                 style={inputStyle}
                 value={v.price}
                 onChange={(e) => updateVariant(vIdx, 'price', e.target.value)}
-                onFocus={(e) => (e.target.style.borderColor = PEACH)}
-                onBlur={(e) => (e.target.style.borderColor = LINE)}
+                onFocus={focusOn}
+                onBlur={focusOff}
               />
               <input
                 placeholder="Compare-at price ₹"
@@ -812,8 +761,8 @@ export default function ProductForm({ initial, productId }) {
                 style={inputStyle}
                 value={v.compareAtPrice}
                 onChange={(e) => updateVariant(vIdx, 'compareAtPrice', e.target.value)}
-                onFocus={(e) => (e.target.style.borderColor = PEACH)}
-                onBlur={(e) => (e.target.style.borderColor = LINE)}
+                onFocus={focusOn}
+                onBlur={focusOff}
               />
             </div>
 
@@ -832,7 +781,7 @@ export default function ProductForm({ initial, productId }) {
             <button
               type="button"
               onClick={() => addVariantImage(vIdx)}
-              style={{ fontSize: '12px', color: PEACH, fontFamily: 'sans-serif', fontWeight: '500', marginBottom: '12px', cursor: 'pointer' }}
+              style={{ fontSize: '12px', color: PRIMARY, fontFamily: 'sans-serif', fontWeight: '500', marginBottom: '12px', cursor: 'pointer' }}
             >
               + Add another image
             </button>
@@ -843,12 +792,12 @@ export default function ProductForm({ initial, productId }) {
             {v.sizes.map((s, sIdx) => (
               <div key={sIdx} className="flex gap-2 mb-2 items-center">
                 <input
-                  placeholder="Size (e.g. M, 38, Free Size)"
-                  style={{ ...inputStyle, width: '140px', marginTop: 0 }}
+                  placeholder="Size (e.g. 2.4, Free Size)"
+                  style={{ ...inputStyle, width: '160px', marginTop: 0 }}
                   value={s.size}
                   onChange={(e) => updateSize(vIdx, sIdx, 'size', e.target.value)}
-                  onFocus={(e) => (e.target.style.borderColor = PEACH)}
-                  onBlur={(e) => (e.target.style.borderColor = LINE)}
+                  onFocus={focusOn}
+                  onBlur={focusOff}
                 />
                 <input
                   type="number"
@@ -856,16 +805,16 @@ export default function ProductForm({ initial, productId }) {
                   style={{ ...inputStyle, width: '90px', marginTop: 0 }}
                   value={s.stock}
                   onChange={(e) => updateSize(vIdx, sIdx, 'stock', e.target.value)}
-                  onFocus={(e) => (e.target.style.borderColor = PEACH)}
-                  onBlur={(e) => (e.target.style.borderColor = LINE)}
+                  onFocus={focusOn}
+                  onBlur={focusOff}
                 />
                 <input
                   placeholder="SKU (optional)"
                   style={{ ...inputStyle, flex: 1, marginTop: 0 }}
                   value={s.sku}
                   onChange={(e) => updateSize(vIdx, sIdx, 'sku', e.target.value)}
-                  onFocus={(e) => (e.target.style.borderColor = PEACH)}
-                  onBlur={(e) => (e.target.style.borderColor = LINE)}
+                  onFocus={focusOn}
+                  onBlur={focusOff}
                 />
                 <button
                   type="button"
@@ -876,41 +825,32 @@ export default function ProductForm({ initial, productId }) {
                 </button>
               </div>
             ))}
-            <button
-              type="button"
-              onClick={() => addSize(vIdx)}
-              style={{ fontSize: '12px', color: PEACH, fontFamily: 'sans-serif', fontWeight: '500', cursor: 'pointer' }}
-            >
-              + Add size
-            </button>
+            <div className="flex flex-wrap gap-4">
+              <button
+                type="button"
+                onClick={() => addSize(vIdx)}
+                style={{ fontSize: '12px', color: PRIMARY, fontFamily: 'sans-serif', fontWeight: '500', cursor: 'pointer' }}
+              >
+                + Add size
+              </button>
+              <button
+                type="button"
+                onClick={() => addStandardBangleSizes(vIdx)}
+                style={{ fontSize: '12px', color: PRIMARY, fontFamily: 'sans-serif', fontWeight: '500', cursor: 'pointer' }}
+              >
+                + Add all bangle sizes ({BANGLE_SIZES.join(', ')})
+              </button>
+            </div>
           </div>
         ))}
       </div>
-
-      {/* Pant Options — optional, product-level, admin can add any number */}
-      <AddonOptionsEditor
-        title="Pant Options"
-        options={form.pantOptions}
-        onAdd={() => addAddonOption('pantOptions')}
-        onUpdate={(idx, key, value) => updateAddonOption('pantOptions', idx, key, value)}
-        onRemove={(idx) => removeAddonOption('pantOptions', idx)}
-      />
-
-      {/* Shawl Options — optional, product-level, admin can add any number */}
-      <AddonOptionsEditor
-        title="Shawl Options"
-        options={form.shawlOptions}
-        onAdd={() => addAddonOption('shawlOptions')}
-        onUpdate={(idx, key, value) => updateAddonOption('shawlOptions', idx, key, value)}
-        onRemove={(idx) => removeAddonOption('shawlOptions', idx)}
-      />
 
       {/* Submit button */}
       <button
         disabled={saving}
         className="w-full sm:w-auto px-8 py-3 font-medium text-sm transition-opacity"
         style={{
-          background: PEACH,
+          background: PRIMARY,
           color: PAPER,
           border: 'none',
           borderRadius: '4px',

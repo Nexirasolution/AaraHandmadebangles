@@ -2,12 +2,15 @@ import mongoose from 'mongoose';
 
 const VariantSchema = new mongoose.Schema(
   {
+    // Colour / shade of the piece (e.g. "Maroon", "Emerald Green").
     color: { type: String, default: '' },
     colorHex: { type: String, default: '#000000' },
     images: [{ type: String }],
     price: { type: Number, required: true },
     compareAtPrice: { type: Number, default: 0 },
 
+    // `size` is the bangle size ("2.2", "2.4", "2.6", "2.8", "2.10") or
+    // "Free Size" for adjustable pieces (necklaces, earrings, kadas, rings).
     sizes: [
       {
         size: { type: String, required: true },
@@ -19,20 +22,6 @@ const VariantSchema = new mongoose.Schema(
   { _id: true }
 );
 
-// A single named add-on option (e.g. "Cotton Palazzo", "Bandhani Shawl").
-// `price` is an ADDITIONAL amount added on top of the variant price when
-// this option is picked — not a standalone price.
-const AddonOptionSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true, trim: true },
-    image: { type: String, default: '' },
-    price: { type: Number, default: 0 },
-    stock: { type: Number, default: 0 },
-    sku: { type: String, default: '' }
-  },
-  { _id: true }
-);
-
 const ProductSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
@@ -40,39 +29,39 @@ const ProductSchema = new mongoose.Schema(
     sku: { type: String, required: true, unique: true, trim: true, uppercase: true },
     description: { type: String, default: '' },
     category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
-    fabric: { type: String, default: '' },
 
-    // Shipping weight of ONE piece, in grams. Used to compute order weight
-    // for shipping. 0 = not set → falls back to Settings.weightPerPiece.
+    // ── Jewellery attributes (all optional; shown on the product page) ──
+    // Base material, e.g. "Silk Thread", "Lac", "Brass".
+    material: { type: String, default: '', trim: true },
+    // Finish / plating, e.g. "Gold Plated", "Oxidised".
+    finish: { type: String, default: '', trim: true },
+    // Stone or decorative work, e.g. "Kundan", "Pearls".
+    stoneType: { type: String, default: '', trim: true },
+    // How many pieces come in one purchase unit (a set of 4 bangles = 4).
+    piecesInSet: { type: Number, default: 1, min: 1 },
+    // Occasions this piece suits: Daily Wear, Festive, Wedding, ...
+    occasion: [{ type: String }],
+    // Free-text care instructions shown on the product page.
+    careInstructions: { type: String, default: '' },
+
+    // Shipping weight of ONE purchase unit (one piece / set / pair) in
+    // grams. Used to compute order weight for shipping. 0 = not set →
+    // falls back to Settings.weightPerPiece.
     weight: { type: Number, default: 0, min: 0 },
 
     tags: [{ type: String }],
     variants: [VariantSchema],
 
-    // One or more optional size chart images. If empty, the storefront
-    // falls back to this product's category.sizeChart instead.
+    // One or more optional size-guide images (e.g. how to measure your
+    // bangle size). If empty, the storefront falls back to this product's
+    // category.sizeChart instead.
     sizeChart: [{ type: String }],
 
-    // One or more optional product videos (e.g. a try-on or fabric-drape
+    // One or more optional product videos (e.g. a wrist-show or sparkle
     // clip). Shown on the storefront PDP below the image gallery. Uploaded
     // through the same /api/upload endpoint as images — Cloudinary's
     // resource_type: 'auto' detects and stores it as a video asset.
     videos: [{ type: String }],
-
-    // Product-level (not per-variant) sleeve/zip options. Admin picks which
-    // of these apply to this product; if a product has any sleeveOptions,
-    // the customer must pick one on the PDP before adding to cart. Same
-    // for zipOptions. Products where these don't apply (sarees, dupattas,
-    // jewellery, etc) simply leave these empty and no selector is shown.
-    sleeveOptions: [{ type: String, enum: ['Full Sleeve', 'Half Sleeve', 'Elbow Sleeve', 'Sleeveless'] }],
-    zipOptions: [{ type: String, enum: ['With Zip', 'Without Zip'] }],
-
-    // Optional add-ons — admin can add any number of named pant/shawl
-    // options, each with its own image, extra price, and stock. Customer
-    // picks at most one of each (or none, i.e. "without pant"/"without
-    // shawl"). Empty array = no selector shown on the storefront.
-    pantOptions: [AddonOptionSchema],
-    shawlOptions: [AddonOptionSchema],
 
     // When true, the storefront shows a highlighted "Ready to Ship" badge
     // below the product title.
