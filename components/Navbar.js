@@ -423,10 +423,11 @@ export default function Navbar() {
               </nav>
             </div>
 
-            {/* Center: logo (scaled with transform so the header height never changes) */}
+            {/* Center: logo (scaled with transform so the header height never changes).
+                Mobile is now w-20 h-20 (80px); -my-2 trims header height on mobile only. */}
             <Link href="/" className="flex items-center justify-self-center">
               <div
-                className="relative w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24"
+                className="relative w-20 h-20 -my-2 sm:my-0 sm:w-20 sm:h-20 md:w-24 md:h-24"
                 style={{
                   transform: scrolled ? 'scale(0.78)' : 'scale(1)',
                   transition: `transform .45s ${EASE}`,
@@ -506,7 +507,7 @@ export default function Navbar() {
             className="relative flex items-center justify-between px-6 py-3"
             style={{ borderBottom: `1px solid ${LINE}` }}
           >
-            <div className="relative w-12 h-12">
+            <div className="relative w-16 h-16">
               <Image src="/logo.png" alt="Tirupur Clothing Hub" fill className="object-contain" />
             </div>
             <button className="nv-icon w-10 h-10" onClick={closeMobileMenu} aria-label="Close menu">
