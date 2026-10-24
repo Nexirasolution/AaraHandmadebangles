@@ -3,7 +3,7 @@ import { Playfair_Display, Poppins } from 'next/font/google';
 import { Toaster } from 'react-hot-toast';
 import { CartProvider } from '@/components/CartContext';
 import { WishlistProvider } from '@/components/WhishlistContext';
-import BottomNav from '@/components/BottomNav';
+// import BottomNav from '@/components/BottomNav';
 import { dbConnect } from '@/lib/mongodb';
 import Settings from '@/models/Settings';
 
@@ -62,7 +62,7 @@ export default function RootLayout({ children }) {
             {/* spacer so page content isn't hidden behind the fixed mobile nav */}
             <div className="md:hidden h-16" />
 
-            <BottomNav />
+            {/* <BottomNav /> */}
           </WishlistProvider>
         </CartProvider>
 
