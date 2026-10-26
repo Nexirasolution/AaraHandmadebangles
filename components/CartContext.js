@@ -6,30 +6,35 @@ import toast from 'react-hot-toast';
 const CartContext = createContext(null);
 const STORAGE_KEY = 'ahb_cart_v1';
 
-// ── Brand tokens — 60% white/cream · 25% navy · 10% gold · 5% pale gold ────
-// Keep in sync with Navbar, Footer, ProductCard and CouponMarquee.
-const WHITE     = '#FFFFFF';
-const NAVY      = '#102A56';
-const NAVY_DARK = '#071A3A';
-const GOLD      = '#C9A227';
-const GOLD_PALE = '#E6D39A';
-const INK       = NAVY_DARK;
-const INK_SOFT  = 'rgba(16, 42, 86, 0.65)';
-const RUST      = '#B0503A'; // status color for out-of-stock errors — kept red on purpose
+// ── Brand tokens — keep in sync with Navbar, ProductCard, CouponMarquee and the homepage ──
+//   Primary    #C2185B  success marker, brand label
+//   Secondary  #D4A017  decorative only (not used for toast status)
+//   Background #FFF8F3  cream
+//   Text       #2D1028  toast text, warning marker
+//   Accent     #F8D7E3  soft pink
+const WHITE    = '#FFFFFF';
+const PRIMARY  = '#C2185B';
+const GOLD     = '#D4A017';
+const CREAM    = '#FFF8F3';
+const INK      = '#2D1028';
+const ACCENT   = '#F8D7E3';
+const INK_SOFT = 'rgba(45, 16, 40, 0.68)';
+const HAIRLINE = 'rgba(45, 16, 40, 0.12)';
+const RUST     = '#B0503A'; // status color for out-of-stock errors — kept red on purpose
 
 const toastBase = {
   duration: 2500,
   style: {
-    fontFamily: 'inherit',
+    fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
     fontSize: '13px',
     fontWeight: 600,
     color: INK,
     background: WHITE,
-    borderRadius: '4px',
+    borderRadius: '12px',
     padding: '10px 14px',
-    boxShadow: '0 4px 16px rgba(7, 26, 58, 0.12)',
-    border: `1px solid ${GOLD_PALE}`,
-    borderLeft: `3px solid ${GOLD}`,
+    boxShadow: '0 8px 24px rgba(45, 16, 40, 0.12)',
+    border: `1px solid ${HAIRLINE}`,
+    borderLeft: `3px solid ${PRIMARY}`,
   },
 };
 
@@ -38,8 +43,8 @@ function brandToast(message, opts = {}) {
     (t) => (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
         <span>{message}</span>
-        <span style={{ fontSize: 9, color: NAVY, opacity: 0.6, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' }}>
-         Aara Handmade Bangles
+        <span style={{ fontSize: 9, color: PRIMARY, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' }}>
+         Aara Creation
         </span>
       </div>
     ),
@@ -127,14 +132,14 @@ export function CartProvider({ children }) {
     if (clamped) {
       brandToast('Only limited stock available — quantity adjusted', {
         icon: '⚠️',
-        style: { ...toastBase.style, borderLeftColor: NAVY },
+        style: { ...toastBase.style, borderLeftColor: INK },
       });
       return;
     }
 
     brandToast('Added to cart', {
       icon: '✓',
-      style: { ...toastBase.style, borderLeftColor: GOLD },
+      style: { ...toastBase.style, borderLeftColor: PRIMARY },
     });
   }, []);
 
@@ -191,14 +196,14 @@ export function CartProvider({ children }) {
     if (clampedCount > 0 || blockedCount > 0) {
       brandToast('Added to cart — some quantities were limited by stock', {
         icon: '⚠️',
-        style: { ...toastBase.style, borderLeftColor: NAVY },
+        style: { ...toastBase.style, borderLeftColor: INK },
       });
       return;
     }
 
     brandToast('Added to cart', {
       icon: '✓',
-      style: { ...toastBase.style, borderLeftColor: GOLD },
+      style: { ...toastBase.style, borderLeftColor: PRIMARY },
     });
   }, []);
 
@@ -211,7 +216,7 @@ export function CartProvider({ children }) {
         if (qty > max) {
           brandToast(`Only ${max} left in stock`, {
             icon: '⚠️',
-            style: { ...toastBase.style, borderLeftColor: NAVY },
+            style: { ...toastBase.style, borderLeftColor: INK },
           });
         }
         return { ...i, qty: nextQty };

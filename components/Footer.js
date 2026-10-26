@@ -54,7 +54,7 @@ export default async function Footer() {
         {/* Brand column */}
         <div className="sm:col-span-4">
           <h3 className={`${display.className} text-2xl leading-tight mb-4`} style={{ color: WHITE, fontWeight: 700 }}>
-            Aara Handmade Bangles
+            Aara Creation
           </h3>
 
           <p className="flex items-start gap-1.5 text-xs font-medium leading-relaxed" style={{ color: WHITE_SOFT }}>

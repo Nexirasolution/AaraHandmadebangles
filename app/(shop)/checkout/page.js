@@ -227,7 +227,7 @@ export default function CheckoutPage() {
           key: orderData.keyId,
           amount: orderData.order.amount,
           currency: 'INR',
-          name: 'Aara Handmade Bangles',
+          name: 'Aara Creation',
           order_id: orderData.order.id,
           prefill: { name: form.name, contact: form.phone, email: form.email },
           theme: { color: PRIMARY },
