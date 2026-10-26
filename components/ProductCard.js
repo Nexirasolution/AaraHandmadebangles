@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Heart, ShoppingBag, Check } from 'lucide-react';
+import { Heart, ShoppingBag, Check, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatINR } from '@/lib/utils';
 import { getVariantTotalStock } from '@/lib/stock';
@@ -17,10 +18,8 @@ import { useCart } from '@/components/CartContext';
 //   Text       #2D1028  titles, prices, dark buttons
 //   Accent     #F8D7E3  soft hovers
 const PRIMARY = '#C2185B';
-const GOLD = '#D4A017';
 const CREAM = '#FFF8F3';
 const INK = '#2D1028';
-const ACCENT = '#F8D7E3';
 const WHITE = '#FFFFFF';
 
 const INK_SOFT = 'rgba(45, 16, 40, 0.68)';
@@ -53,7 +52,7 @@ function resizeImage(url, width) {
 
 const IMG_SIZES = '(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw';
 
-// Card hover (lift + soft shadow) and image zoom — plain CSS, no JS handlers.
+// Card hover (lift + soft shadow), image zoom and the size popup — plain CSS.
 const CSS = `
 .pc-card{
   background:${PAPER};border:1px solid ${HAIRLINE};border-radius:${CARD_RADIUS};overflow:hidden;
@@ -65,8 +64,28 @@ const CSS = `
 }
 .pc-card img.pc-img{transition:transform .7s ${EASE}}
 .pc-card:hover img.pc-img{transform:scale(1.05)}
+
+/* Size popup: bottom sheet on mobile, centered dialog on larger screens */
+.pc-backdrop{
+  position:fixed;inset:0;z-index:100;display:flex;align-items:flex-end;justify-content:center;
+  background:rgba(45,16,40,.45);animation:pc-fade .25s ease both;
+}
+.pc-sheet{
+  width:100%;max-width:420px;background:${WHITE};
+  border-radius:24px 24px 0 0;padding:20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  box-shadow:0 -12px 40px rgba(45,16,40,.18);animation:pc-up .4s ${EASE} both;
+}
+@media (min-width:640px){
+  .pc-backdrop{align-items:center;padding:16px}
+  .pc-sheet{border-radius:24px;animation-name:pc-pop}
+}
+@keyframes pc-fade{from{opacity:0}to{opacity:1}}
+@keyframes pc-up{from{transform:translateY(100%)}to{transform:none}}
+@keyframes pc-pop{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}
+
 @media (prefers-reduced-motion:reduce){
   .pc-card,.pc-card img.pc-img{transition:none}
+  .pc-backdrop,.pc-sheet{animation:none}
 }
 `;
 
@@ -105,11 +124,13 @@ export default function ProductCard({ product }) {
   const outOfStock = totalStock <= 0;
   const lowStock = !outOfStock && totalStock <= 5;
 
-  // If the product only comes in one size, pick it automatically.
+  // If the product only comes in one size, pick it automatically (no popup needed).
   const [selectedSize, setSelectedSize] = useState(() =>
     sizes.length === 1 && sizes[0].stock > 0 ? sizes[0].size : ''
   );
   const [added, setAdded] = useState(false);
+  // Size popup: null = closed, 'cart' | 'buy' = what happens after a size is chosen
+  const [sizeModal, setSizeModal] = useState(null);
   const selectedStock = sizes.find((s) => s.size === selectedSize)?.stock ?? 0;
 
   // Brief "Added" confirmation on the cart button
@@ -118,6 +139,21 @@ export default function ProductCard({ product }) {
     const t = setTimeout(() => setAdded(false), 1600);
     return () => clearTimeout(t);
   }, [added]);
+
+  // While the popup is open: close on Escape and lock page scroll.
+  useEffect(() => {
+    if (!sizeModal) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setSizeModal(null);
+    };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [sizeModal]);
 
   const needsProductPage = OPTION_FIELDS.some((k) => product[k]?.length > 0) || !hasSizes;
 
@@ -131,7 +167,7 @@ export default function ProductCard({ product }) {
     toggleWishlist(wishlistId);
   };
 
-  function buildItem() {
+  function buildItem(size, stock) {
     return {
       productId: product._id ?? product.id,
       slug: product.slug,
@@ -140,31 +176,41 @@ export default function ProductCard({ product }) {
       image, // original URL — the cart keeps the full-quality image
       color: variant?.color || '-',
       colorHex: variant?.colorHex,
-      size: selectedSize,
+      size,
       price,
-      stock: selectedStock,
+      stock,
       qty: 1,
     };
   }
 
-  function requireSize() {
+  function finish(mode, size) {
+    const stock = sizes.find((s) => s.size === size)?.stock ?? 0;
+    addItem(buildItem(size, stock));
+    if (mode === 'buy') {
+      router.push('/checkout');
+    } else {
+      setAdded(true);
+    }
+  }
+
+  // Add to cart / Buy now: if a size is already known (single-size product) go straight
+  // through, otherwise ask for the size in the popup.
+  function start(mode) {
+    if (selectedSize) {
+      finish(mode, selectedSize);
+      return;
+    }
+    setSizeModal(mode);
+  }
+
+  function confirmSize() {
     if (!selectedSize) {
       toast.error('Please select a size');
-      return false;
+      return;
     }
-    return true;
-  }
-
-  function handleAddToCart() {
-    if (!requireSize()) return;
-    addItem(buildItem());
-    setAdded(true);
-  }
-
-  function handleBuyNow() {
-    if (!requireSize()) return;
-    addItem(buildItem());
-    router.push('/checkout');
+    const mode = sizeModal;
+    setSizeModal(null);
+    finish(mode, selectedSize);
   }
 
   return (
@@ -267,37 +313,7 @@ export default function ProductCard({ product }) {
           </div>
         </Link>
 
-        {/* Size chips — only when the card can add straight to cart */}
-        {!outOfStock && !needsProductPage && (
-          <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Select size">
-            {sizes.map((s) => {
-              const soldOut = s.stock <= 0;
-              const active = selectedSize === s.size;
-              return (
-                <button
-                  key={s.size}
-                  type="button"
-                  disabled={soldOut}
-                  onClick={() => setSelectedSize(s.size)}
-                  aria-pressed={active}
-                  className="min-w-[32px] h-8 px-2.5 text-[11px] font-bold transition-colors"
-                  style={{
-                    borderRadius: '999px',
-                    border: `1px solid ${active ? PRIMARY : soldOut ? HAIRLINE : 'rgba(194,24,91,.30)'}`,
-                    background: active ? PRIMARY : PAPER,
-                    color: soldOut ? DISABLED : active ? WHITE : INK,
-                    textDecoration: soldOut ? 'line-through' : 'none',
-                    cursor: soldOut ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {s.size}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Actions */}
+        {/* Actions (sizes are chosen in the popup after tapping Add to cart / Buy now) */}
         <div className="mt-3 flex items-stretch gap-2">
           {outOfStock ? (
             <button
@@ -316,7 +332,7 @@ export default function ProductCard({ product }) {
             <>
               <button
                 type="button"
-                onClick={handleAddToCart}
+                onClick={() => start('cart')}
                 className={added ? BTN_CART_ADDED : BTN_CART}
                 aria-label="Add to cart"
                 title="Add to cart"
@@ -329,13 +345,107 @@ export default function ProductCard({ product }) {
                 <span className="hidden md:inline">{added ? 'Added' : 'Add to cart'}</span>
               </button>
 
-              <button type="button" onClick={handleBuyNow} className={BTN_BUY}>
+              <button type="button" onClick={() => start('buy')} className={BTN_BUY}>
                 Buy now
               </button>
             </>
           )}
         </div>
       </div>
+
+      {/* Size popup — rendered in a portal because the card's hover transform would
+          otherwise break position:fixed. */}
+      {sizeModal &&
+        createPortal(
+          <div
+            className="pc-backdrop"
+            onClick={() => setSizeModal(null)}
+            style={{ fontFamily: FONT_SANS }}
+          >
+            <div
+              className="pc-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Select size"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className="shrink-0 overflow-hidden"
+                  style={{ width: 56, height: 72, borderRadius: 12, background: CREAM, border: `1px solid ${HAIRLINE}` }}
+                >
+                  <img
+                    src={resizeImage(image, 200)}
+                    alt=""
+                    width={56}
+                    height={72}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold line-clamp-2" style={{ color: INK, lineHeight: 1.35 }}>
+                    {product.name}
+                  </p>
+                  <p className="mt-1 text-sm font-bold" style={{ color: INK }}>
+                    {formatINR(price)}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSizeModal(null)}
+                  aria-label="Close"
+                  className="shrink-0 flex items-center justify-center w-8 h-8 rounded-full"
+                  style={{ border: `1px solid ${HAIRLINE}`, color: INK }}
+                >
+                  <X size={16} strokeWidth={1.8} />
+                </button>
+              </div>
+
+              <p className="mt-5 mb-2.5 text-[13px] font-bold" style={{ color: INK }}>
+                Select size
+              </p>
+
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Select size">
+                {sizes.map((s) => {
+                  const soldOut = s.stock <= 0;
+                  const active = selectedSize === s.size;
+                  return (
+                    <button
+                      key={s.size}
+                      type="button"
+                      disabled={soldOut}
+                      onClick={() => setSelectedSize(s.size)}
+                      aria-pressed={active}
+                      className="min-w-[44px] h-10 px-3.5 text-[13px] font-bold transition-colors"
+                      style={{
+                        borderRadius: '999px',
+                        border: `1px solid ${active ? PRIMARY : soldOut ? HAIRLINE : 'rgba(194,24,91,.30)'}`,
+                        background: active ? PRIMARY : PAPER,
+                        color: soldOut ? DISABLED : active ? WHITE : INK,
+                        textDecoration: soldOut ? 'line-through' : 'none',
+                        cursor: soldOut ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {s.size}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={confirmSize}
+                disabled={!selectedSize}
+                className={`${BTN_FULL} mt-6`}
+              >
+                {!selectedSize ? 'Select a size' : sizeModal === 'buy' ? 'Buy now' : 'Add to cart'}
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

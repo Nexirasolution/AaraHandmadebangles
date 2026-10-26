@@ -324,7 +324,8 @@ export default function Navbar() {
         }}
       >
         <div className="max-w-7xl mx-auto px-3 sm:px-6">
-          <div className="grid grid-cols-3 items-center">
+          {/* Side columns are equal (minmax(0,1fr)) so the logo stays centered; the middle column sizes to the logo */}
+          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center">
             {/* Left: mobile toggle + primary links */}
             <div className="flex items-center gap-1 justify-self-start">
               <button
@@ -424,10 +425,10 @@ export default function Navbar() {
             </div>
 
             {/* Center: logo (scaled with transform so the header height never changes).
-                Mobile is now w-20 h-20 (80px); -my-2 trims header height on mobile only. */}
-            <Link href="/" className="flex items-center justify-self-center">
+                Mobile is 56px with vertical padding so it sits fully inside the header. */}
+            <Link href="/" className="flex items-center justify-self-center py-1.5 sm:py-0">
               <div
-                className="relative w-20 h-20 -my-2 sm:my-0 sm:w-20 sm:h-20 md:w-24 md:h-24"
+                className="relative w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24"
                 style={{
                   transform: scrolled ? 'scale(0.78)' : 'scale(1)',
                   transition: `transform .45s ${EASE}`,

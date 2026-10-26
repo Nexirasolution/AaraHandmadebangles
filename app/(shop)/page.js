@@ -11,6 +11,7 @@ import Review from '@/models/Review';
 import Combo from '@/models/Combo';
 import Category from '@/models/Category';
 import BannerCarousel from '@/components/BannerCarousel';
+import CategorySlider from '@/components/CategorySlider';
 import ProductCard from '@/components/ProductCard';
 import ReviewSection from '@/components/ReviewSection';
 
@@ -52,9 +53,10 @@ const PRODUCT_FIELDS = 'name slug basePrice sleeveOptions zipOptions variants';
 const COMBO_WIDTHS = [300, 450, 700];
 const COMBO_SIZES = '(max-width: 640px) 50vw, 33vw';
 
-// Animation set (pure CSS — this is a server component, so no JS handlers):
-//  · categories – tall capsule cards in a staggered (up/down) row slide past in an endless loop
-//                  (pauses on hover). Each capsule bobs like it is floating on water; on hover
+// Animation set:
+//  · categories – tall capsule cards in a staggered (up/down) row. Auto-scrolls via JS
+//                  (components/CategorySlider.jsx) AND can be scrolled manually (swipe, drag,
+//                  wheel, keyboard). Each capsule bobs like it is floating on water; on hover
 //                  pink water rises inside the capsule and ripple rings spread from the photo.
 //  · sea        – layered waves drifting along the bottom of the category band
 //  · button     – dark pill; pink water rises inside it on hover
@@ -74,14 +76,21 @@ const SEA_FILL = (color) =>
 
 const CSS = `
 /* ───────── Category slider ─────────
-   Two identical groups, the track slides left by exactly one group. */
+   Auto-scrolls via JS (CategorySlider.jsx) and can also be scrolled manually. */
 .cw-band{position:relative;overflow:hidden;background:${CREAM}}
-.cw-marquee{overflow:hidden}
-.cw-track{display:flex;width:max-content;animation:cw-slide 60s linear infinite}
-.cw-marquee:hover .cw-track,.cw-marquee:focus-within .cw-track{animation-play-state:paused}
+.cw-marquee{
+  overflow-x:auto;overflow-y:hidden;
+  scrollbar-width:none;-ms-overflow-style:none;
+  overscroll-behavior-x:contain;
+  -webkit-overflow-scrolling:touch;
+  cursor:grab;
+}
+.cw-marquee::-webkit-scrollbar{display:none}
+.cw-marquee.is-dragging{cursor:grabbing;user-select:none}
+.cw-marquee.is-dragging .cw-pill{transition:none}
+.cw-track{display:flex;width:max-content}
 .cw-group{display:flex;align-items:flex-start;flex-shrink:0;gap:20px;padding-right:20px;--stagger:28px}
 @media (min-width:640px){.cw-group{gap:26px;padding-right:26px;--stagger:52px}}
-@keyframes cw-slide{to{transform:translateX(-50%)}}
 
 /* Item = one slot in the row (carries the up/down offset); bob wrapper floats inside it */
 .cw-item{display:block;flex-shrink:0;border-radius:9999px}
@@ -201,8 +210,8 @@ const CSS = `
 
 @media (prefers-reduced-motion:reduce){
   .hp-btn::before,.hp-btn::after,.hp-wave::before,.hp-wave::after{animation:none}
-  .cw-track,.cw-bob,.cw-water::before,.cw-sea i,.cw-item:hover .cw-photo::before,.cw-item:hover .cw-photo::after{animation:none}
-  .cw-marquee{overflow-x:auto;-webkit-mask-image:none!important;mask-image:none!important}
+  .cw-bob,.cw-water::before,.cw-sea i,.cw-item:hover .cw-photo::before,.cw-item:hover .cw-photo::after{animation:none}
+  .cw-marquee{-webkit-mask-image:none!important;mask-image:none!important}
   .cw-pill,.cw-photo img,.cw-water,.cw-arrow{transition:none}
   .hp-btn,.hp-btn .hp-arrow,.hp-more::after,.hp-more .hp-arrow,.hp-card{transition:none}
 }
@@ -265,15 +274,6 @@ function SectionTitle({ children, size = 'lg' }) {
 export default async function HomePage() {
   const { banners, newArrivals, reviews, combos, categories } = await getData();
 
-  // Category slider: repeat the list until one group is wider than any screen,
-  // then render the group twice so the loop is seamless.
-  // The group length is kept EVEN so the up/down stagger continues unbroken across the loop seam.
-  let reps = categories.length ? Math.ceil(12 / categories.length) : 0;
-  if (categories.length && (reps * categories.length) % 2 === 1) reps += 1;
-  const catLoop = Array.from({ length: reps }).flatMap(() => categories);
-  const slideSeconds = catLoop.length * 4; // slower, calmer drift
-  const fade = 'linear-gradient(to right, transparent, #000 6%, #000 94%, transparent)';
-
   return (
     <div className="overflow-x-hidden" style={{ background: WHITE, color: INK }}>
       <style>{CSS}</style>
@@ -281,62 +281,15 @@ export default async function HomePage() {
       {/* Banner */}
       <BannerCarousel banners={banners} />
 
-      {/* Shop by Category — cream band, staggered capsule cards, water animation */}
+      {/* Shop by Category — cream band, staggered capsule cards, water animation.
+          Auto-scrolls and can also be scrolled manually (see CategorySlider). */}
       {categories.length > 0 && (
         <section className="cw-band">
           <div className="max-w-6xl mx-auto px-4 pt-14">
             <SectionTitle>Shop by Category</SectionTitle>
           </div>
 
-          <div
-            className="cw-marquee mt-8 pt-3 pb-24"
-            style={{ WebkitMaskImage: fade, maskImage: fade }}
-          >
-            <div className="cw-track" style={{ animationDuration: `${slideSeconds}s` }}>
-              {[0, 1].map((g) => (
-                <div key={g} className="cw-group" aria-hidden={g === 1 ? true : undefined}>
-                  {catLoop.map((c, i) => (
-                    <Link
-                      key={`${g}-${i}`}
-                      href={`/category/${c.slug}`}
-                      className="cw-item w-[132px] sm:w-[160px] md:w-[184px]"
-                      style={{ marginTop: i % 2 ? 'var(--stagger)' : 0 }}
-                      tabIndex={g === 1 ? -1 : undefined}
-                    >
-                      <div className="cw-bob" style={{ '--i': i }}>
-                        <div className="cw-pill">
-                          <div className="cw-photo">
-                            {c.image ? (
-                              <img
-                                // ~170px wide oval -> 360x450 crop covers retina screens
-                                src={resizeImage(c.image, 360, 450)}
-                                alt={g === 1 ? '' : c.name}
-                                width={180}
-                                height={225}
-                                loading="lazy"
-                                decoding="async"
-                              />
-                            ) : (
-                              <div className="cw-ph" style={{ background: ACCENT }} />
-                            )}
-                          </div>
-
-                          <span className="cw-name line-clamp-2" style={{ fontFamily: FONT_SANS }}>
-                            {c.name}
-                          </span>
-                          <ArrowRight size={18} strokeWidth={1.6} className="cw-arrow" />
-
-                          {/* rising water, behind everything */}
-                          <span className="cw-water" aria-hidden="true" />
-                          <span className="cw-water cw-water-b" aria-hidden="true" />
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
+          <CategorySlider categories={categories} />
 
           {/* drifting sea along the bottom edge */}
           <div className="cw-sea" aria-hidden="true">
