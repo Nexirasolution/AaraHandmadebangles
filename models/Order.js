@@ -4,11 +4,14 @@ const OrderItemSchema = new mongoose.Schema(
   {
     product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
     comboId: { type: mongoose.Schema.Types.ObjectId, ref: 'Combo', default: null },
+    isCombo: { type: Boolean, default: false },
     name: String,
     sku: { type: String, default: '' },
     image: String,
     color: String,
-    size: String, // bangle size ("2.4") or "Free Size"
+    size: { type: String, default: '' }, // empty for products without sizes
+    sleeveType: { type: String, default: '' },
+    zipType: { type: String, default: '' },
     price: Number, // unit price
     qty: Number
   },
@@ -19,18 +22,10 @@ const OrderSchema = new mongoose.Schema(
   {
     orderNumber: { type: String, required: true, unique: true },
     items: [OrderItemSchema],
-    customer: {
-      name: String,
-      phone: String,
-      email: String
-    },
+    customer: { name: String, phone: String, email: String },
     shippingAddress: {
-      line1: String,
-      line2: String,
-      city: String,
-      state: String,
-      pincode: String,
-      landmark: String
+      line1: String, line2: String, city: String,
+      state: String, pincode: String, landmark: String
     },
     subtotal: Number,
     discount: { type: Number, default: 0 },
@@ -39,9 +34,6 @@ const OrderSchema = new mongoose.Schema(
     total: Number,
     paymentMethod: { type: String, enum: ['razorpay', 'cod'], default: 'razorpay' },
     paymentStatus: { type: String, enum: ['pending', 'paid', 'failed', 'refunded'], default: 'pending' },
-    // unique + sparse: COD orders have no razorpayOrderId (many nulls allowed),
-    // but two orders can never share the same real Razorpay order id —
-    // this is what makes the webhook/client-path race safe.
     razorpayOrderId: { type: String, unique: true, sparse: true },
     razorpayPaymentId: String,
     status: {

@@ -4,18 +4,9 @@ import { getRazorpay } from '@/lib/razorpay';
 import PendingOrder from '@/models/PendingOrder';
 import { buildOrderItemsAndTotals, OrderError } from '@/lib/orderCalc';
 
-// POST { items, customer, shippingAddress, couponCode, expectedTotal }
-// Recomputes pricing server-side (never trusts a client-sent amount),
-// stashes the full order payload so the webhook can build the order
-// even if the customer's browser never calls back, then creates the
-// Razorpay order for the verified total.
-//
-// Shipping is calculated from the cart's weight and the state in
-// shippingAddress.state (state-wise rates set by the admin in Settings).
-//
-// `expectedTotal` is the total the customer saw on the checkout page.
-// It is NOT used as the charge amount — only compared against the server
-// total so a mismatch is caught before the Razorpay popup opens.
+// Recomputes pricing server-side, stashes the order payload AND the exact
+// charged total/shipping (so the saved order always equals what was paid),
+// then creates the Razorpay order.
 export async function POST(req) {
   try {
     await dbConnect();
@@ -44,7 +35,6 @@ export async function POST(req) {
       });
     }
 
-    // Guard: the page showed one total, the server computed another.
     if (expectedTotal !== undefined && expectedTotal !== null) {
       if (Math.abs(total - Number(expectedTotal)) > 1) {
         return NextResponse.json(
@@ -54,7 +44,6 @@ export async function POST(req) {
       }
     }
 
-    // Razorpay minimum is ₹1 (100 paise). A tiny/zero total means pricing is broken.
     if (!Number.isFinite(total) || total < 1) {
       console.error('Invalid order total computed:', { subtotal, discount, shippingFee, total });
       return NextResponse.json({ error: 'Could not calculate order total' }, { status: 500 });
@@ -79,7 +68,9 @@ export async function POST(req) {
       items,
       customer,
       shippingAddress,
-      couponCode: couponCode || ''
+      couponCode: couponCode || '',
+      total,
+      shippingFee
     });
 
     return NextResponse.json({ order: rzpOrder, keyId: process.env.RAZORPAY_KEY_ID, total });

@@ -1,12 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { X, UploadCloud, Loader2, Plus, Upload } from 'lucide-react';
 import { MATERIALS, FINISHES, STONE_TYPES, OCCASIONS, BANGLE_SIZES } from '@/lib/jewellery';
 
 const FIELD = 'w-full px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none bg-white';
+
+// Keeps size names exactly as the product form / storefront filter expect
+// them ("2.4", "Free Size"). The old code upper-cased everything, which
+// turned "Free Size" into "FREE SIZE" and broke the exact-match size filter.
+function normalizeSizeName(raw) {
+  const name = String(raw || '').trim().replace(/\s+/g, ' ');
+  if (name.toLowerCase() === 'free size' || name.toLowerCase() === 'freesize') return 'Free Size';
+  return name;
+}
 
 export default function BulkAddProductsPage() {
   const router = useRouter();
@@ -20,6 +29,7 @@ export default function BulkAddProductsPage() {
   const [price, setPrice] = useState('');
   const [compareAtPrice, setCompareAtPrice] = useState('');
   const [stockBySize, setStockBySize] = useState({}); // { '2.4': 10, '2.6': 10, ... }
+  const [tagsText, setTagsText] = useState(''); // comma separated, parsed on submit
 
   // Jewellery attributes — applied to every product created in this batch.
   const [material, setMaterial] = useState('');
@@ -45,6 +55,7 @@ export default function BulkAddProductsPage() {
 
   const [files, setFiles] = useState([]); // File[]
   const [previews, setPreviews] = useState([]); // objectURL[]
+  const previewsRef = useRef([]);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
 
@@ -53,6 +64,14 @@ export default function BulkAddProductsPage() {
       .then((r) => r.json())
       .then((d) => setCategories(d.categories || []))
       .catch(() => toast.error('Failed to load categories'));
+  }, []);
+
+  // Free the browser memory held by image previews when leaving the page.
+  useEffect(() => {
+    previewsRef.current = previews;
+  }, [previews]);
+  useEffect(() => {
+    return () => previewsRef.current.forEach((u) => URL.revokeObjectURL(u));
   }, []);
 
   const selectedCategory = categories.find((c) => c._id === category);
@@ -84,14 +103,17 @@ export default function BulkAddProductsPage() {
   }
 
   function removeImage(idx) {
+    URL.revokeObjectURL(previews[idx]);
     setFiles((prev) => prev.filter((_, i) => i !== idx));
     setPreviews((prev) => prev.filter((_, i) => i !== idx));
   }
 
   function addManualSize() {
-    const name = manualSizeName.trim().toUpperCase();
+    const name = normalizeSizeName(manualSizeName);
     if (!name) return toast.error('Enter a size (e.g. 2.4, Free Size)');
-    if (manualSizes.some((s) => s.size === name)) return toast.error('That size is already added');
+    if (manualSizes.some((s) => s.size.toLowerCase() === name.toLowerCase())) {
+      return toast.error('That size is already added');
+    }
     setManualSizes((prev) => [...prev, { size: name, stock: manualSizeStock || '0' }]);
     setManualSizeName('');
     setManualSizeStock('');
@@ -100,9 +122,9 @@ export default function BulkAddProductsPage() {
   // One tap to add 2.2 / 2.4 / 2.6 / 2.8 / 2.10, each with the stock typed above.
   function addStandardBangleSizes() {
     setManualSizes((prev) => {
-      const existing = new Set(prev.map((s) => s.size));
+      const existing = new Set(prev.map((s) => s.size.toLowerCase()));
       const toAdd = BANGLE_SIZES
-        .filter((size) => !existing.has(size))
+        .filter((size) => !existing.has(size.toLowerCase()))
         .map((size) => ({ size, stock: manualSizeStock || '0' }));
       return [...prev, ...toAdd];
     });
@@ -155,17 +177,31 @@ export default function BulkAddProductsPage() {
     if (!category) return toast.error('Select a category');
     if (!skuPrefix.trim()) return toast.error('Enter a SKU code (e.g. MT)');
     if (!price || Number(price) <= 0) return toast.error('Enter a valid price');
+    if (Number(compareAtPrice) > 0 && Number(compareAtPrice) < Number(price)) {
+      return toast.error('Compare-at price should be higher than the price');
+    }
     if (!weight || Number(weight) <= 0) return toast.error('Enter a valid weight in grams');
     if (files.length === 0) return toast.error('Add at least one image');
 
     // Combine predefined-size stock and manually-added sizes
     const fromPredefined = Object.entries(stockBySize)
       .filter(([, stock]) => stock !== '')
-      .map(([size, stock]) => ({ size, stock: Number(stock) }));
+      .map(([size, stock]) => ({ size: normalizeSizeName(size), stock: Math.max(0, Number(stock) || 0) }));
 
-    const fromManual = manualSizes.map((s) => ({ size: s.size, stock: Number(s.stock) || 0 }));
+    const fromManual = manualSizes.map((s) => ({
+      size: normalizeSizeName(s.size),
+      stock: Math.max(0, Number(s.stock) || 0),
+    }));
 
-    const sizes = [...fromPredefined, ...fromManual];
+    // De-duplicate case-insensitively (first entry wins) so a variant never
+    // ends up with two rows for the same size.
+    const seen = new Set();
+    const sizes = [...fromPredefined, ...fromManual].filter((s) => {
+      const key = s.size.toLowerCase();
+      if (!s.size || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 
     if (sizes.length === 0) {
       if (categorySizes.length === 0) {
@@ -194,7 +230,7 @@ export default function BulkAddProductsPage() {
           material,
           finish,
           stoneType,
-          piecesInSet: Number(piecesInSet) || 1,
+          piecesInSet: Math.max(1, Math.floor(Number(piecesInSet)) || 1),
           occasion,
           careInstructions,
           weight: Number(weight),
@@ -202,6 +238,7 @@ export default function BulkAddProductsPage() {
           compareAtPrice: Number(compareAtPrice) || 0,
           sizes,
           images: imageUrls,
+          tags: tagsText.split(',').map((t) => t.trim()).filter(Boolean),
           isReadyToShip,
           sizeChart,
         }),
@@ -280,6 +317,7 @@ export default function BulkAddProductsPage() {
             <label className="block text-sm font-medium mb-1">Price</label>
             <input
               type="number"
+              min="0"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               className={FIELD}
@@ -290,6 +328,7 @@ export default function BulkAddProductsPage() {
             <label className="block text-sm font-medium mb-1">Compare-at price (optional)</label>
             <input
               type="number"
+              min="0"
               value={compareAtPrice}
               onChange={(e) => setCompareAtPrice(e.target.value)}
               className={FIELD}
@@ -368,6 +407,17 @@ export default function BulkAddProductsPage() {
               </label>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">Tags (optional, comma separated)</label>
+          <input
+            value={tagsText}
+            onChange={(e) => setTagsText(e.target.value)}
+            placeholder="e.g. silk thread, bridal, red"
+            className={FIELD}
+          />
+          <p className="text-xs text-brand-ink/40 mt-1">Applied to every product in this batch.</p>
         </div>
 
         <div>
@@ -538,7 +588,7 @@ export default function BulkAddProductsPage() {
           {previews.length > 0 && (
             <div className="grid grid-cols-4 sm:grid-cols-6 gap-3 mt-4">
               {previews.map((src, idx) => (
-                <div key={idx} className="relative aspect-square rounded-md overflow-hidden bg-brand-ink/5">
+                <div key={src} className="relative aspect-square rounded-md overflow-hidden bg-brand-ink/5">
                   <img src={src} alt="" className="w-full h-full object-cover" />
                   <button
                     type="button"

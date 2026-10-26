@@ -9,8 +9,14 @@ const VariantSchema = new mongoose.Schema(
     price: { type: Number, required: true },
     compareAtPrice: { type: Number, default: 0 },
 
+    // Stock for variants that have NO sizes (leave `sizes` empty).
+    // Not set = stock is not tracked (unlimited). Set a number to track it.
+    // Ignored when the variant has size entries (stock lives on each size).
+    stock: { type: Number, min: 0, default: undefined },
+
     // `size` is the bangle size ("2.2", "2.4", "2.6", "2.8", "2.10") or
     // "Free Size" for adjustable pieces (necklaces, earrings, kadas, rings).
+    // Leave this array empty for products that have no size at all.
     sizes: [
       {
         size: { type: String, required: true },

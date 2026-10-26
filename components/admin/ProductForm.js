@@ -23,8 +23,26 @@ function emptyVariant() {
     images: [''],
     price: '',
     compareAtPrice: '',
+    // Only used when the variant has NO sizes. '' = not tracked (unlimited).
+    stock: '',
     sizes: [{ size: '', stock: 0, sku: '' }],
   };
+}
+
+// Makes variants loaded from the DB safe to edit: every controlled input
+// gets a defined value and every variant has at least one image slot.
+function normalizeVariants(variants) {
+  if (!Array.isArray(variants) || variants.length === 0) return [emptyVariant()];
+  return variants.map((v) => ({
+    ...v,
+    color: v.color || '',
+    colorHex: v.colorHex || '#000000',
+    images: Array.isArray(v.images) && v.images.length ? v.images : [''],
+    price: v.price ?? '',
+    compareAtPrice: v.compareAtPrice > 0 ? v.compareAtPrice : '',
+    stock: v.stock ?? '',
+    sizes: (v.sizes || []).map((s) => ({ ...s, size: s.size || '', stock: s.stock ?? 0, sku: s.sku || '' })),
+  }));
 }
 
 function normalizeSizeChart(value) {
@@ -207,6 +225,7 @@ export default function ProductForm({ initial, productId }) {
       variants: [emptyVariant()],
       sizeChart: [],
       videos: [],
+      seoTitle: '', seoDescription: '',
       isBestSeller: false, isTopSeller: false, isActiveSeller: true, isFeatured: false, isActive: true,
       isReadyToShip: false,
     };
@@ -223,8 +242,16 @@ export default function ProductForm({ initial, productId }) {
       careInstructions: base.careInstructions || '',
       sizeChart: normalizeSizeChart(base.sizeChart),
       videos: base.videos || [],
+      seoTitle: base.seoTitle || '',
+      seoDescription: base.seoDescription || '',
+      variants: normalizeVariants(base.variants),
     };
   });
+  // Tags are edited as raw text and parsed on save. Parsing on every
+  // keystroke made it impossible to type a comma (it was stripped instantly).
+  const [tagsText, setTagsText] = useState(() =>
+    Array.isArray(initial?.tags) ? initial.tags.join(', ') : ''
+  );
   const [saving, setSaving] = useState(false);
   const [sizeChartUploading, setSizeChartUploading] = useState(false);
   const [videoUploading, setVideoUploading] = useState(false);
@@ -394,31 +421,78 @@ export default function ProductForm({ initial, productId }) {
       return;
     }
 
+    // Variant-level validation (the schema only enforces that price exists).
+    for (let i = 0; i < form.variants.length; i++) {
+      const v = form.variants[i];
+      const n = i + 1;
+      const price = Number(v.price);
+      if (!(price > 0)) {
+        toast.error(`Variant ${n}: enter a valid price`);
+        return;
+      }
+      const compare = Number(v.compareAtPrice);
+      if (compare > 0 && compare < price) {
+        toast.error(`Variant ${n}: compare-at price should be higher than the price`);
+        return;
+      }
+      const names = v.sizes.map((s) => s.size.trim().toLowerCase()).filter(Boolean);
+      if (new Set(names).size !== names.length) {
+        toast.error(`Variant ${n}: duplicate size names`);
+        return;
+      }
+    }
+
     setSaving(true);
     // Note: sku is intentionally omitted — it's auto-generated/managed server-side
     // based on the product's category (see /api/products and /api/products/[id]).
     const payload = {
       ...form,
+      category: form.category?._id || form.category,
       weight: Number(form.weight) || 0,
+      tags: tagsText.split(',').map((t) => t.trim()).filter(Boolean),
       material: (form.material || '').trim(),
       finish: (form.finish || '').trim(),
       stoneType: (form.stoneType || '').trim(),
       piecesInSet: Math.max(1, Math.floor(Number(form.piecesInSet)) || 1),
       occasion: form.occasion || [],
       careInstructions: (form.careInstructions || '').trim(),
+      seoTitle: (form.seoTitle || '').trim(),
+      seoDescription: (form.seoDescription || '').trim(),
       sizeChart: form.sizeChart || [],
       videos: form.videos || [],
-      variants: form.variants.map((v) => ({
-        ...v,
-        price: Number(v.price),
-        compareAtPrice: Number(v.compareAtPrice) || 0,
-        images: v.images.filter(Boolean),
-        sizes: v.sizes
+      variants: form.variants.map((v) => {
+        const sizes = v.sizes
           .filter((s) => s.size.trim() !== '')
-          .map((s) => ({ ...s, size: s.size.trim(), stock: Number(s.stock) || 0 })),
-      })),
+          .map((s) => ({ ...s, size: s.size.trim(), stock: Math.max(0, Number(s.stock) || 0), sku: (s.sku || '').trim() }));
+        const out = {
+          ...v,
+          price: Number(v.price),
+          compareAtPrice: Number(v.compareAtPrice) || 0,
+          images: v.images.filter(Boolean),
+          sizes,
+        };
+        // Variant-level stock only applies to size-less variants. Blank =
+        // not tracked (unlimited); for sized variants it is ignored.
+        if (sizes.length === 0 && String(v.stock ?? '').trim() !== '') {
+          out.stock = Math.max(0, Number(v.stock) || 0);
+        } else {
+          delete out.stock;
+        }
+        return out;
+      }),
     };
     delete payload.sku;
+    // Server-managed fields — never send them back. soldCount / rating /
+    // reviewCount in particular would overwrite live values with the stale
+    // copy loaded when the page opened.
+    delete payload._id;
+    delete payload.__v;
+    delete payload.createdAt;
+    delete payload.updatedAt;
+    delete payload.basePrice; // recomputed from variants on the server
+    delete payload.soldCount;
+    delete payload.rating;
+    delete payload.reviewCount;
     // Clothing-only fields from older products — never send them back.
     delete payload.fabric;
     delete payload.sleeveOptions;
@@ -428,14 +502,19 @@ export default function ProductForm({ initial, productId }) {
 
     const url = productId ? `/api/products/${productId}` : '/api/products';
     const method = productId ? 'PUT' : 'POST';
-    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    const data = await res.json();
-    setSaving(false);
-    if (res.ok) {
-      toast.success(productId ? 'Product updated' : 'Product created');
-      router.push('/admin/products');
-    } else {
-      toast.error(data.error || 'Something went wrong');
+    try {
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(productId ? 'Product updated' : 'Product created');
+        router.push('/admin/products');
+      } else {
+        toast.error(data.error || 'Something went wrong');
+      }
+    } catch (err) {
+      toast.error(err.message || 'Something went wrong');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -558,8 +637,8 @@ export default function ProductForm({ initial, productId }) {
             <label style={labelStyle}>Tags (comma separated)</label>
             <input
               style={inputStyle}
-              value={Array.isArray(form.tags) ? form.tags.join(', ') : ''}
-              onChange={(e) => update('tags', e.target.value.split(',').map((t) => t.trim()).filter(Boolean))}
+              value={tagsText}
+              onChange={(e) => setTagsText(e.target.value)}
               onFocus={focusOn}
               onBlur={focusOff}
             />
@@ -585,6 +664,32 @@ export default function ProductForm({ initial, productId }) {
               placeholder="e.g. Keep away from water and perfume. Store in the box provided."
               value={form.careInstructions}
               onChange={(e) => update('careInstructions', e.target.value)}
+              onFocus={focusOn}
+              onBlur={focusOff}
+            />
+          </div>
+
+          {/* SEO */}
+          <div>
+            <label style={labelStyle}>
+              SEO title <span style={hintStyle}>(optional)</span>
+            </label>
+            <input
+              style={inputStyle}
+              value={form.seoTitle}
+              onChange={(e) => update('seoTitle', e.target.value)}
+              onFocus={focusOn}
+              onBlur={focusOff}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>
+              SEO description <span style={hintStyle}>(optional)</span>
+            </label>
+            <input
+              style={inputStyle}
+              value={form.seoDescription}
+              onChange={(e) => update('seoDescription', e.target.value)}
               onFocus={focusOn}
               onBlur={focusOff}
             />
@@ -710,139 +815,170 @@ export default function ProductForm({ initial, productId }) {
           </button>
         </div>
 
-        {form.variants.map((v, vIdx) => (
-          <div key={vIdx} style={cardStyle}>
-            {/* Variant header */}
-            <div
-              className="flex justify-between items-center mb-3 pb-2"
-              style={{ borderBottom: `1px solid ${LINE}` }}
-            >
-              <span style={{ fontWeight: '500', fontSize: '13px', color: INK, fontFamily: 'sans-serif' }}>
-                Variant {vIdx + 1}
-              </span>
-              {form.variants.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => removeVariant(vIdx)}
-                  style={{ color: INK_SOFT, cursor: 'pointer' }}
-                >
-                  <Trash2 size={16} />
-                </button>
-              )}
-            </div>
+        {form.variants.map((v, vIdx) => {
+          const hasNamedSizes = v.sizes.some((s) => s.size.trim() !== '');
+          return (
+            <div key={v._id || vIdx} style={cardStyle}>
+              {/* Variant header */}
+              <div
+                className="flex justify-between items-center mb-3 pb-2"
+                style={{ borderBottom: `1px solid ${LINE}` }}
+              >
+                <span style={{ fontWeight: '500', fontSize: '13px', color: INK, fontFamily: 'sans-serif' }}>
+                  Variant {vIdx + 1}
+                </span>
+                {form.variants.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeVariant(vIdx)}
+                    style={{ color: INK_SOFT, cursor: 'pointer' }}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
 
-            <div className="grid sm:grid-cols-4 gap-3 mb-3">
-              <input
-                placeholder="Color name (e.g. Maroon)"
-                style={inputStyle}
-                value={v.color}
-                onChange={(e) => updateVariant(vIdx, 'color', e.target.value)}
-                onFocus={focusOn}
-                onBlur={focusOff}
-              />
-              <input
-                type="color"
-                style={{ ...inputStyle, padding: '4px', height: '40px' }}
-                value={v.colorHex}
-                onChange={(e) => updateVariant(vIdx, 'colorHex', e.target.value)}
-              />
-              <input
-                placeholder="Price ₹"
-                type="number"
-                style={inputStyle}
-                value={v.price}
-                onChange={(e) => updateVariant(vIdx, 'price', e.target.value)}
-                onFocus={focusOn}
-                onBlur={focusOff}
-              />
-              <input
-                placeholder="Compare-at price ₹"
-                type="number"
-                style={inputStyle}
-                value={v.compareAtPrice}
-                onChange={(e) => updateVariant(vIdx, 'compareAtPrice', e.target.value)}
-                onFocus={focusOn}
-                onBlur={focusOff}
-              />
-            </div>
-
-            <p style={{ fontSize: '12px', color: INK_SOFT, fontFamily: 'sans-serif', marginBottom: '8px', fontWeight: '500' }}>
-              Images for this colour — click thumbnail to upload
-            </p>
-            {v.images.map((img, imgIdx) => (
-              <ImageSlot
-                key={imgIdx}
-                value={img}
-                onChange={(url) => updateVariantImage(vIdx, imgIdx, url)}
-                onRemove={() => removeVariantImage(vIdx, imgIdx)}
-                showRemove={v.images.length > 1}
-              />
-            ))}
-            <button
-              type="button"
-              onClick={() => addVariantImage(vIdx)}
-              style={{ fontSize: '12px', color: PRIMARY, fontFamily: 'sans-serif', fontWeight: '500', marginBottom: '12px', cursor: 'pointer' }}
-            >
-              + Add another image
-            </button>
-
-            <p style={{ fontSize: '12px', color: INK_SOFT, fontFamily: 'sans-serif', fontWeight: '500', marginBottom: '6px' }}>
-              Sizes &amp; Stock
-            </p>
-            {v.sizes.map((s, sIdx) => (
-              <div key={sIdx} className="flex gap-2 mb-2 items-center">
+              <div className="grid sm:grid-cols-4 gap-3 mb-3">
                 <input
-                  placeholder="Size (e.g. 2.4, Free Size)"
-                  style={{ ...inputStyle, width: '160px', marginTop: 0 }}
-                  value={s.size}
-                  onChange={(e) => updateSize(vIdx, sIdx, 'size', e.target.value)}
+                  placeholder="Color name (e.g. Maroon)"
+                  style={inputStyle}
+                  value={v.color}
+                  onChange={(e) => updateVariant(vIdx, 'color', e.target.value)}
                   onFocus={focusOn}
                   onBlur={focusOff}
                 />
                 <input
+                  type="color"
+                  style={{ ...inputStyle, padding: '4px', height: '40px' }}
+                  value={v.colorHex}
+                  onChange={(e) => updateVariant(vIdx, 'colorHex', e.target.value)}
+                />
+                <input
+                  placeholder="Price ₹"
                   type="number"
-                  placeholder="Stock"
-                  style={{ ...inputStyle, width: '90px', marginTop: 0 }}
-                  value={s.stock}
-                  onChange={(e) => updateSize(vIdx, sIdx, 'stock', e.target.value)}
+                  min="0"
+                  style={inputStyle}
+                  value={v.price}
+                  onChange={(e) => updateVariant(vIdx, 'price', e.target.value)}
                   onFocus={focusOn}
                   onBlur={focusOff}
                 />
                 <input
-                  placeholder="SKU (optional)"
-                  style={{ ...inputStyle, flex: 1, marginTop: 0 }}
-                  value={s.sku}
-                  onChange={(e) => updateSize(vIdx, sIdx, 'sku', e.target.value)}
+                  placeholder="Compare-at price ₹"
+                  type="number"
+                  min="0"
+                  style={inputStyle}
+                  value={v.compareAtPrice}
+                  onChange={(e) => updateVariant(vIdx, 'compareAtPrice', e.target.value)}
                   onFocus={focusOn}
                   onBlur={focusOff}
                 />
+              </div>
+
+              <p style={{ fontSize: '12px', color: INK_SOFT, fontFamily: 'sans-serif', marginBottom: '8px', fontWeight: '500' }}>
+                Images for this colour — click thumbnail to upload
+              </p>
+              {v.images.map((img, imgIdx) => (
+                <ImageSlot
+                  key={imgIdx}
+                  value={img}
+                  onChange={(url) => updateVariantImage(vIdx, imgIdx, url)}
+                  onRemove={() => removeVariantImage(vIdx, imgIdx)}
+                  showRemove={v.images.length > 1}
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => addVariantImage(vIdx)}
+                style={{ fontSize: '12px', color: PRIMARY, fontFamily: 'sans-serif', fontWeight: '500', marginBottom: '12px', cursor: 'pointer' }}
+              >
+                + Add another image
+              </button>
+
+              <p style={{ fontSize: '12px', color: INK_SOFT, fontFamily: 'sans-serif', fontWeight: '500', marginBottom: '6px' }}>
+                Sizes &amp; Stock{' '}
+                <span style={hintStyle}>(leave sizes blank for pieces that have no size)</span>
+              </p>
+              {v.sizes.map((s, sIdx) => (
+                <div key={s._id || sIdx} className="flex gap-2 mb-2 items-center">
+                  <input
+                    placeholder="Size (e.g. 2.4, Free Size)"
+                    style={{ ...inputStyle, width: '160px', marginTop: 0 }}
+                    value={s.size}
+                    onChange={(e) => updateSize(vIdx, sIdx, 'size', e.target.value)}
+                    onFocus={focusOn}
+                    onBlur={focusOff}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Stock"
+                    style={{ ...inputStyle, width: '90px', marginTop: 0 }}
+                    value={s.stock}
+                    onChange={(e) => updateSize(vIdx, sIdx, 'stock', e.target.value)}
+                    onFocus={focusOn}
+                    onBlur={focusOff}
+                  />
+                  <input
+                    placeholder="SKU (optional)"
+                    style={{ ...inputStyle, flex: 1, marginTop: 0 }}
+                    value={s.sku || ''}
+                    onChange={(e) => updateSize(vIdx, sIdx, 'sku', e.target.value)}
+                    onFocus={focusOn}
+                    onBlur={focusOff}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeSize(vIdx, sIdx)}
+                    style={{ color: INK_SOFT, cursor: 'pointer', flexShrink: 0 }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+              <div className="flex flex-wrap gap-4 mb-3">
                 <button
                   type="button"
-                  onClick={() => removeSize(vIdx, sIdx)}
-                  style={{ color: INK_SOFT, cursor: 'pointer', flexShrink: 0 }}
+                  onClick={() => addSize(vIdx)}
+                  style={{ fontSize: '12px', color: PRIMARY, fontFamily: 'sans-serif', fontWeight: '500', cursor: 'pointer' }}
                 >
-                  <Trash2 size={14} />
+                  + Add size
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addStandardBangleSizes(vIdx)}
+                  style={{ fontSize: '12px', color: PRIMARY, fontFamily: 'sans-serif', fontWeight: '500', cursor: 'pointer' }}
+                >
+                  + Add all bangle sizes ({BANGLE_SIZES.join(', ')})
                 </button>
               </div>
-            ))}
-            <div className="flex flex-wrap gap-4">
-              <button
-                type="button"
-                onClick={() => addSize(vIdx)}
-                style={{ fontSize: '12px', color: PRIMARY, fontFamily: 'sans-serif', fontWeight: '500', cursor: 'pointer' }}
-              >
-                + Add size
-              </button>
-              <button
-                type="button"
-                onClick={() => addStandardBangleSizes(vIdx)}
-                style={{ fontSize: '12px', color: PRIMARY, fontFamily: 'sans-serif', fontWeight: '500', cursor: 'pointer' }}
-              >
-                + Add all bangle sizes ({BANGLE_SIZES.join(', ')})
-              </button>
+
+              {/* Stock for variants with no sizes (schema: variant.stock) */}
+              <div style={{ maxWidth: '260px' }}>
+                <label style={labelStyle}>
+                  Stock (no-size pieces){' '}
+                  <span style={hintStyle}>
+                    {hasNamedSizes ? '— not used, stock is set per size above' : '— leave blank for unlimited'}
+                  </span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Blank = not tracked"
+                  disabled={hasNamedSizes}
+                  style={{
+                    ...inputStyle,
+                    ...(hasNamedSizes ? { background: DISABLED_BG, color: INK_SOFT, cursor: 'not-allowed' } : {}),
+                  }}
+                  value={hasNamedSizes ? '' : v.stock}
+                  onChange={(e) => updateVariant(vIdx, 'stock', e.target.value)}
+                  onFocus={focusOn}
+                  onBlur={focusOff}
+                />
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Submit button */}

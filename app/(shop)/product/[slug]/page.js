@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Fraunces, Inter } from 'next/font/google';
 import { ShoppingBag, Zap, Heart, Share2, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { formatINR } from '@/lib/utils';
-import { getSizeStock } from '@/lib/stock';
+import { getSizeStock, variantHasSizes } from '@/lib/stock';
 import { resizeImage, buildSrcSet } from '@/lib/image';
 import { useCart } from '@/components/CartContext';
 import ColorSizeSelector from '@/components/ColorSizeSelector';
@@ -101,6 +101,7 @@ export default function ProductPage() {
         setData(d);
         setActiveVariant(d.product?.variants?.[0]);
         setActiveImage(0);
+        setActiveSize('');
       })
       .catch((err) => {
         if (err.name !== 'AbortError') console.error(err);
@@ -139,8 +140,13 @@ export default function ProductPage() {
   // Size guide: the product's own images, else the category's fallback.
   const sizeChartImages = product.sizeChart?.length ? product.sizeChart : (product.category?.sizeChart || []);
 
+  // Products without sizes: no size is asked for, and stock comes from the variant.
+  const hasSizes = variantHasSizes(activeVariant);
+  // True when a stock cap can be applied (sizeless variant, or a size is picked).
+  const stockKnown = !hasSizes || !!activeSize;
+
   const selectedSizeStock = getSizeStock(activeVariant, activeSize);
-  const sizeOutOfStock = !!activeSize && selectedSizeStock <= 0;
+  const sizeOutOfStock = stockKnown && selectedSizeStock <= 0;
 
   // Jewellery details shown under the price. Empty values are skipped.
   const details = [
@@ -151,11 +157,11 @@ export default function ProductPage() {
     ['Occasion', product.occasion?.join(', ')],
   ].filter(([, value]) => value);
 
-  // Max quantity the shopper can add for the chosen size.
-  // Infinity = no size picked yet, so no cap is applied.
+  // Max quantity the shopper can add.
+  // Infinity = no cap (size not picked yet, or stock is not tracked).
   function stockCap() {
-    if (!activeSize) return Infinity;
-    return getSizeStock(activeVariant, activeSize);
+    if (!stockKnown) return Infinity;
+    return getSizeStock(activeVariant, hasSizes ? activeSize : '');
   }
 
   function prevImage() { setActiveImage((i) => (i === 0 ? images.length - 1 : i - 1)); }
@@ -194,7 +200,7 @@ export default function ProductPage() {
       name: product.name,
       image: activeVariant.images?.[0], // original URL — cart keeps full quality
       color: activeVariant.color,
-      size: activeSize,
+      size: hasSizes ? activeSize : '', // empty for products without sizes
       price: unitPrice,
       qty,
       stock: stockCap(),
@@ -202,9 +208,13 @@ export default function ProductPage() {
   }
 
   function validateSelection() {
-    if (!activeSize) { toast.error('Please select a size'); return false; }
+    // A size is required only when this variant actually has sizes.
+    if (hasSizes && !activeSize) { toast.error('Please select a size'); return false; }
     const stock = stockCap();
-    if (stock <= 0) { toast.error('This size is out of stock'); return false; }
+    if (stock <= 0) {
+      toast.error(hasSizes ? 'This size is out of stock' : 'This item is out of stock');
+      return false;
+    }
     if (qty > stock) {
       toast.error(`Only ${stock} left in stock`);
       setQty(stock);
@@ -461,7 +471,7 @@ export default function ProductPage() {
                     const cap = stockCap();
                     return cap > 0 && cap !== Infinity ? Math.min(cap, q + 1) : q + 1;
                   })}
-                  disabled={(() => { const cap = stockCap(); return !!activeSize && cap !== Infinity && qty >= cap; })()}
+                  disabled={(() => { const cap = stockCap(); return stockKnown && cap !== Infinity && qty >= cap; })()}
                   className="w-8 h-8 rounded-full text-base font-bold leading-none transition-colors hover:bg-[#F8D7E3] disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                   style={{ color: INK }}
                   aria-label="Increase quantity"
@@ -471,7 +481,7 @@ export default function ProductPage() {
               </div>
               {(() => {
                 const cap = stockCap();
-                return !!activeSize && cap !== Infinity && cap > 0 && cap <= 5 && (
+                return stockKnown && cap !== Infinity && cap > 0 && cap <= 5 && (
                   <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ color: PRIMARY, background: ACCENT }}>
                     Only {cap} left
                   </span>
